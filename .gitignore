@@ -3,4 +3,5 @@ __pycache__/
 vendor/
 data/uploads/
 data/exports/
+data/*.sqlite3
 .env
