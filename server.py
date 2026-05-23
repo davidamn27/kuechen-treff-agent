@@ -150,6 +150,7 @@ def init_db() -> None:
               document_id TEXT NOT NULL,
               block_number TEXT NOT NULL,
               article_number TEXT NOT NULL,
+              gross_price REAL,
               block_price REAL,
               price_group TEXT,
               dimensions TEXT,
@@ -191,6 +192,7 @@ def init_db() -> None:
             "ALTER TABLE articles ADD COLUMN dimension_status TEXT",
             "ALTER TABLE extracted_positions ADD COLUMN dimensions TEXT",
             "ALTER TABLE block_rules ADD COLUMN dimensions TEXT",
+            "ALTER TABLE block_rules ADD COLUMN gross_price REAL",
         ]:
             try:
                 connection.execute(statement)
@@ -558,6 +560,8 @@ def parse_block_library_rows(text: str) -> list[dict]:
             continue
         block_number = block_match.group(1)
         price_groups = block_match.group(2).split()
+        bek_match = re.search(r"BEK\s+.+?\s+zur\s+Verr\s+([0-9.,\s]+)", section)
+        bek_prices = parse_price_list(bek_match.group(1) if bek_match else "")
         price_match = re.search(r"Blockpreis\s+([0-9.,\s]+)", section)
         block_prices = parse_price_list(price_match.group(1) if price_match else "")
         article_matches = re.finditer(
@@ -582,6 +586,7 @@ def parse_block_library_rows(text: str) -> list[dict]:
 
         for article_number, article_alias, description, category, dimensions in articles:
             for index, price_group in enumerate(price_groups):
+                bek_price = bek_prices[index] if index < len(bek_prices) else None
                 block_price = block_prices[index] if index < len(block_prices) else None
                 rows.append(
                     {
@@ -591,6 +596,7 @@ def parse_block_library_rows(text: str) -> list[dict]:
                         "beschreibung": description,
                         "kategorie": category,
                         "masse": dimensions or "",
+                        "bruttopreis": bek_price if bek_price is not None else "",
                         "blockpreis": block_price if block_price is not None else "",
                         "preisgruppe": price_group,
                         "verrechenbar": "ja",
@@ -932,10 +938,25 @@ def persist_extraction(connection: sqlite3.Connection, project_id: str, document
                 """
                 INSERT INTO block_rules (
                   id, project_id, document_id, block_number, article_number,
-                  block_price, price_group, dimensions, chargeable, source_file, source_excerpt, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  gross_price, block_price, price_group, dimensions, chargeable,
+                  source_file, source_excerpt, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (str(uuid4()), project_id, document_id, block_number or "BLOCK-OHNE-NR", article_number, block_price, price_group, dimensions, chargeable, filename, excerpt, stamp),
+                (
+                    str(uuid4()),
+                    project_id,
+                    document_id,
+                    block_number or "BLOCK-OHNE-NR",
+                    article_number,
+                    gross_price,
+                    block_price,
+                    price_group,
+                    dimensions,
+                    chargeable,
+                    filename,
+                    excerpt,
+                    stamp,
+                ),
             )
             rules += 1
 
@@ -1095,12 +1116,16 @@ def write_reconciled_articles(
         block_match = block_matches.get(article_number)
 
         if block_match:
+            if single_price <= 0:
+                single_price = block_match["allocated_gross"]
             block_price = block_match["allocated_price"]
             status = "Einsparung (Block)"
             rule = block_match["rule"]
             comments.append(
                 f"Bestellung passt zu Block {block_match['block_number']} PG {block_match['price_group']} "
-                f"(Blockpreis {money_number(block_match['block_price'])} EUR)."
+                f"({block_match['matched_rule_count']} von {block_match['full_rule_count']} Positionen erkannt, "
+                f"anteiliger Blockpreis {money_number(block_match['block_price'])} EUR, "
+                f"Gesamtblock {money_number(block_match['full_block_price'])} EUR)."
             )
         elif rule:
             if rule["chargeable"]:
@@ -1131,10 +1156,12 @@ def write_reconciled_articles(
             comments.append(f"Mengenabweichung Bestellung {order_qty}, AB {confirmation_qty}.")
         if order and not confirmation:
             if has_confirmation_document:
-                status = "fehlt in AB"
+                if not block_match:
+                    status = "fehlt in AB"
                 comments.append("Artikel ist in der Bestellung vorhanden, aber nicht in der AB.")
             else:
-                status = "AB offen"
+                if not block_match:
+                    status = "AB offen"
                 comments.append("AB vom Hersteller noch offen.")
         if confirmation and not order:
             status = "zusätzlich in AB"
@@ -1212,22 +1239,26 @@ def match_block_candidates(by_article: dict[str, dict[str, list[dict]]], rules: 
         matched_article_numbers = set()
         for rule in block_rules:
             matched_article = first_matching_article(rule, order_article_numbers - used_articles)
-            if not matched_article:
-                break
-            matched_rules.append((matched_article, rule))
-            used_articles.add(matched_article)
-        else:
-            matched_article_numbers = {article_number for article_number, _rule in matched_rules}
+            if matched_article:
+                matched_rules.append((matched_article, rule))
+                used_articles.add(matched_article)
+        matched_article_numbers = {article_number for article_number, _rule in matched_rules}
 
-        if len(matched_rules) != len(block_rules) or not matched_article_numbers:
+        if len(matched_rules) < 2:
             continue
 
-        gross_total = 0.0
+        order_gross_total = 0.0
+        full_rule_gross_total = block_group_gross_total(block_rules)
+        rule_gross_total = matched_group_gross_total(block_rules, matched_rules)
         for article_number in matched_article_numbers:
             position = order_positions[article_number]
-            gross_total += (position.get("gross_price") or position.get("net_price") or 0.0) * int(position.get("quantity") or 1)
+            order_gross_total += (position.get("gross_price") or position.get("net_price") or 0.0) * int(position.get("quantity") or 1)
+        gross_total = order_gross_total if order_gross_total > 0 else rule_gross_total
         block_price = block_rules[0].get("block_price") or 0.0
-        saving = gross_total - block_price
+        allocated_block_price = block_price
+        if full_rule_gross_total > 0 and rule_gross_total > 0:
+            allocated_block_price = round(block_price * (rule_gross_total / full_rule_gross_total), 2)
+        saving = gross_total - allocated_block_price
         if saving <= 0:
             continue
 
@@ -1238,7 +1269,11 @@ def match_block_candidates(by_article: dict[str, dict[str, list[dict]]], rules: 
                 "rules": matched_rules,
                 "articles": matched_article_numbers,
                 "gross_total": gross_total,
-                "block_price": block_price,
+                "full_gross_total": full_rule_gross_total,
+                "block_price": allocated_block_price,
+                "full_block_price": block_price,
+                "full_rule_count": len(block_rules),
+                "matched_rule_count": len(matched_rules),
                 "saving": saving,
             }
         )
@@ -1253,13 +1288,19 @@ def match_block_candidates(by_article: dict[str, dict[str, list[dict]]], rules: 
         position = order_positions[article_number]
         quantity = int(position.get("quantity") or 1)
         gross_value = (position.get("gross_price") or position.get("net_price") or 0.0) * quantity
+        if gross_value <= 0 and rules_by_article.get(article_number):
+            gross_value = best["full_gross_total"] / best["full_rule_count"] if best["full_rule_count"] else 0.0
         share = gross_value / best["gross_total"] if best["gross_total"] else 0
         allocated_total = round(best["block_price"] * share, 2)
         result[article_number] = {
             "allocated_price": round(allocated_total / quantity, 2) if quantity else allocated_total,
+            "allocated_gross": round(gross_value / quantity, 2) if quantity else gross_value,
             "block_number": best["block_number"],
             "price_group": best["price_group"],
             "block_price": best["block_price"],
+            "full_block_price": best["full_block_price"],
+            "matched_rule_count": best["matched_rule_count"],
+            "full_rule_count": best["full_rule_count"],
             "rule": rules_by_article.get(article_number),
         }
     return result
@@ -1268,15 +1309,59 @@ def match_block_candidates(by_article: dict[str, dict[str, list[dict]]], rules: 
 def first_matching_article(rule: dict, article_numbers: set[str]) -> str | None:
     aliases = rule_aliases(rule)
     for article_number in article_numbers:
-        if article_number in aliases:
+        article_aliases = haecker_article_aliases(article_number)
+        if article_aliases & aliases:
             return article_number
     return None
+
+
+def block_group_gross_total(block_rules: list[dict]) -> float:
+    gross_values = [rule.get("gross_price") or 0.0 for rule in block_rules if rule.get("gross_price")]
+    if not gross_values:
+        return 0.0
+    if len({round(value, 2) for value in gross_values}) == 1:
+        return gross_values[0]
+    return sum(gross_values)
+
+
+def matched_group_gross_total(block_rules: list[dict], matched_rules: list[tuple[str, dict]]) -> float:
+    full_total = block_group_gross_total(block_rules)
+    if full_total <= 0:
+        return 0.0
+    gross_values = [rule.get("gross_price") or 0.0 for rule in block_rules if rule.get("gross_price")]
+    if gross_values and len({round(value, 2) for value in gross_values}) == 1:
+        return full_total * (len(matched_rules) / len(block_rules))
+    return sum((rule.get("gross_price") or 0.0) for _article_number, rule in matched_rules)
 
 
 def rule_aliases(rule: dict) -> set[str]:
     aliases = {rule.get("article_number") or ""}
     excerpt = rule.get("source_excerpt") or ""
     aliases.update(token for token in re.findall(r"\b[A-ZÄÖÜ][A-Z0-9ÄÖÜ/-]{2,24}\b", excerpt) if looks_like_article_number(token))
+    expanded = set()
+    for alias in aliases:
+        expanded.update(haecker_article_aliases(alias))
+    return {alias for alias in expanded if alias}
+
+
+def haecker_article_aliases(article_number: str) -> set[str]:
+    value = (article_number or "").upper()
+    aliases = {value}
+    changed = True
+    while changed:
+        changed = False
+        for alias in list(aliases):
+            variants = {
+                alias.replace("78", "71"),
+                alias.replace("71", "78"),
+                re.sub(r"D\d+$", "D", alias),
+                alias.replace("MAH", ""),
+                re.sub(r"^V", "", alias),
+            }
+            for variant in variants:
+                if variant and variant not in aliases:
+                    aliases.add(variant)
+                    changed = True
     return {alias for alias in aliases if alias}
 
 
