@@ -567,6 +567,7 @@ def parse_block_library_rows(text: str) -> list[dict]:
         articles = []
         for article_match in article_matches:
             article_number = article_match.group(1)
+            article_alias = article_match.group(2) or ""
             description = article_match.group(3).strip()
             line_end = section.find("\n", article_match.start())
             source_line = section[article_match.start() : line_end if line_end != -1 else len(section)]
@@ -577,15 +578,16 @@ def parse_block_library_rows(text: str) -> list[dict]:
                 category = "Arbeitsplatten"
             else:
                 category = infer_category(description)
-            articles.append((article_number, description, category, dimensions))
+            articles.append((article_number, article_alias, description, category, dimensions))
 
-        for article_number, description, category, dimensions in articles:
+        for article_number, article_alias, description, category, dimensions in articles:
             for index, price_group in enumerate(price_groups):
                 block_price = block_prices[index] if index < len(block_prices) else None
                 rows.append(
                     {
                         "blocknummer": block_number,
                         "artikelnummer": article_number,
+                        "artikelalias": article_alias if looks_like_article_number(article_alias) else "",
                         "beschreibung": description,
                         "kategorie": category,
                         "masse": dimensions or "",
@@ -1053,6 +1055,8 @@ def write_reconciled_articles(
     for rule in rules:
         rules_by_article[rule["article_number"]] = rule
 
+    block_matches = match_block_candidates(by_article, rules)
+
     for article_number, groups in by_article.items():
         # Skip Häcker block-reference entries (e.g. BC1623364 "Küchenblock") –
         # these are aggregate price markers in the AB, not individual articles.
@@ -1088,8 +1092,17 @@ def write_reconciled_articles(
         block_price = single_price
         comments = []
         status = "geprüft"
+        block_match = block_matches.get(article_number)
 
-        if rule:
+        if block_match:
+            block_price = block_match["allocated_price"]
+            status = "Einsparung (Block)"
+            rule = block_match["rule"]
+            comments.append(
+                f"Bestellung passt zu Block {block_match['block_number']} PG {block_match['price_group']} "
+                f"(Blockpreis {money_number(block_match['block_price'])} EUR)."
+            )
+        elif rule:
             if rule["chargeable"]:
                 block_price = rule["block_price"] if rule["block_price"] is not None else single_price
             else:
@@ -1171,6 +1184,100 @@ def write_reconciled_articles(
                 dimension_status,
             ),
         )
+
+
+def match_block_candidates(by_article: dict[str, dict[str, list[dict]]], rules: list[dict]) -> dict[str, dict]:
+    order_positions = {
+        article_number: first(groups.get("Bestellung", []))
+        for article_number, groups in by_article.items()
+        if first(groups.get("Bestellung", []))
+    }
+    if not order_positions:
+        return {}
+
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for rule in rules:
+        if not rule.get("chargeable") or rule.get("block_price") is None:
+            continue
+        key = (rule.get("block_number") or "", rule.get("price_group") or "")
+        if not key[0]:
+            continue
+        groups.setdefault(key, []).append(rule)
+
+    candidates = []
+    order_article_numbers = set(order_positions)
+    for (block_number, price_group), block_rules in groups.items():
+        matched_rules = []
+        used_articles = set()
+        matched_article_numbers = set()
+        for rule in block_rules:
+            matched_article = first_matching_article(rule, order_article_numbers - used_articles)
+            if not matched_article:
+                break
+            matched_rules.append((matched_article, rule))
+            used_articles.add(matched_article)
+        else:
+            matched_article_numbers = {article_number for article_number, _rule in matched_rules}
+
+        if len(matched_rules) != len(block_rules) or not matched_article_numbers:
+            continue
+
+        gross_total = 0.0
+        for article_number in matched_article_numbers:
+            position = order_positions[article_number]
+            gross_total += (position.get("gross_price") or position.get("net_price") or 0.0) * int(position.get("quantity") or 1)
+        block_price = block_rules[0].get("block_price") or 0.0
+        saving = gross_total - block_price
+        if saving <= 0:
+            continue
+
+        candidates.append(
+            {
+                "block_number": block_number,
+                "price_group": price_group,
+                "rules": matched_rules,
+                "articles": matched_article_numbers,
+                "gross_total": gross_total,
+                "block_price": block_price,
+                "saving": saving,
+            }
+        )
+
+    if not candidates:
+        return {}
+
+    best = max(candidates, key=lambda candidate: (candidate["saving"], len(candidate["articles"])))
+    result = {}
+    rules_by_article = {article_number: rule for article_number, rule in best["rules"]}
+    for article_number in best["articles"]:
+        position = order_positions[article_number]
+        quantity = int(position.get("quantity") or 1)
+        gross_value = (position.get("gross_price") or position.get("net_price") or 0.0) * quantity
+        share = gross_value / best["gross_total"] if best["gross_total"] else 0
+        allocated_total = round(best["block_price"] * share, 2)
+        result[article_number] = {
+            "allocated_price": round(allocated_total / quantity, 2) if quantity else allocated_total,
+            "block_number": best["block_number"],
+            "price_group": best["price_group"],
+            "block_price": best["block_price"],
+            "rule": rules_by_article.get(article_number),
+        }
+    return result
+
+
+def first_matching_article(rule: dict, article_numbers: set[str]) -> str | None:
+    aliases = rule_aliases(rule)
+    for article_number in article_numbers:
+        if article_number in aliases:
+            return article_number
+    return None
+
+
+def rule_aliases(rule: dict) -> set[str]:
+    aliases = {rule.get("article_number") or ""}
+    excerpt = rule.get("source_excerpt") or ""
+    aliases.update(token for token in re.findall(r"\b[A-ZÄÖÜ][A-Z0-9ÄÖÜ/-]{2,24}\b", excerpt) if looks_like_article_number(token))
+    return {alias for alias in aliases if alias}
 
 
 def first(items: list[dict]) -> dict | None:
