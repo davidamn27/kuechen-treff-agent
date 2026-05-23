@@ -282,16 +282,18 @@ function renderArticles(articles, summary) {
           <td>${escapeHtml(article.description)}</td>
           <td>${escapeHtml(article.category)}</td>
           <td>${article.quantity}</td>
+          <td>${formatDimensions(article)}</td>
           <td>${formatMoney(article.single_price)}</td>
           <td>${formatMoney(article.block_price)}</td>
           <td class="${saving > 0 ? "saving" : ""}">${formatMoney(saving)}</td>
         </tr>
         <tr class="detail-row">
           <td></td>
-          <td colspan="7">
+          <td colspan="8">
             Status: <strong>${escapeHtml(article.status)}</strong>
             ${article.block_number ? ` · Block: ${escapeHtml(article.block_number)}` : ""}
             ${article.price_group ? ` · Preisgruppe: ${escapeHtml(article.price_group)}` : ""}
+            ${article.dimension_status && article.dimension_status !== "offen" ? ` · Maße: ${escapeHtml(article.dimension_status)}` : ""}
             ${article.comment ? ` · Hinweis: ${escapeHtml(article.comment)}` : ""}
           </td>
         </tr>
@@ -302,10 +304,19 @@ function renderArticles(articles, summary) {
   tableFoot.innerHTML = `
     <tr>
       <td colspan="4">${summary.position_count} Positionen</td>
-      <td colspan="3">Gesamteinsparung (geschätzt)</td>
+      <td colspan="4">Gesamteinsparung (geschätzt)</td>
       <td class="total">${formatMoney(summary.estimated_savings)}</td>
     </tr>
   `;
+}
+
+function formatDimensions(article) {
+  const planned = article.planned_dimensions || "";
+  const manufacturer = article.manufacturer_dimensions || "";
+  if (planned && manufacturer && planned !== manufacturer) {
+    return `${escapeHtml(planned)} → ${escapeHtml(manufacturer)}`;
+  }
+  return escapeHtml(planned || manufacturer || "offen");
 }
 
 function renderDocuments(documents) {

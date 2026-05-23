@@ -94,6 +94,9 @@ def init_db() -> None:
               source TEXT NOT NULL,
               status TEXT NOT NULL,
               comment TEXT,
+              planned_dimensions TEXT,
+              manufacturer_dimensions TEXT,
+              dimension_status TEXT,
               FOREIGN KEY(project_id) REFERENCES projects(id)
             );
 
@@ -133,6 +136,7 @@ def init_db() -> None:
               net_price REAL,
               block_number TEXT,
               price_group TEXT,
+              dimensions TEXT,
               source_file TEXT NOT NULL,
               source_excerpt TEXT,
               created_at TEXT NOT NULL,
@@ -148,6 +152,7 @@ def init_db() -> None:
               article_number TEXT NOT NULL,
               block_price REAL,
               price_group TEXT,
+              dimensions TEXT,
               chargeable INTEGER NOT NULL,
               source_file TEXT NOT NULL,
               source_excerpt TEXT,
@@ -181,6 +186,11 @@ def init_db() -> None:
             "ALTER TABLE articles ADD COLUMN order_found INTEGER DEFAULT 0",
             "ALTER TABLE articles ADD COLUMN confirmation_found INTEGER DEFAULT 0",
             "ALTER TABLE articles ADD COLUMN source_refs TEXT",
+            "ALTER TABLE articles ADD COLUMN planned_dimensions TEXT",
+            "ALTER TABLE articles ADD COLUMN manufacturer_dimensions TEXT",
+            "ALTER TABLE articles ADD COLUMN dimension_status TEXT",
+            "ALTER TABLE extracted_positions ADD COLUMN dimensions TEXT",
+            "ALTER TABLE block_rules ADD COLUMN dimensions TEXT",
         ]:
             try:
                 connection.execute(statement)
@@ -335,10 +345,11 @@ def analyze_project(project_id: str) -> dict:
         positions = [row_to_dict(row) for row in connection.execute("SELECT * FROM extracted_positions WHERE project_id = ?", (project_id,))]
         rules = block_rules_for_project(connection, project_id)
         ab_block_data = get_ab_block_data(connection, project_id)
+        has_confirmation_document = has_document_type(connection, project_id, "Auftragsbestätigung")
 
         connection.execute("DELETE FROM articles WHERE project_id = ?", (project_id,))
         if positions:
-            write_reconciled_articles(connection, project_id, positions, rules, ab_block_data)
+            write_reconciled_articles(connection, project_id, positions, rules, ab_block_data, has_confirmation_document)
 
         add_timeline(connection, "Analyse ausgeführt", "Artikelabgleich, Blockprüfung und Einsparungsberechnung wurden regelbasiert aktualisiert.", project_id=project_id)
         connection.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (now_iso(), project_id))
@@ -355,6 +366,14 @@ def block_rules_for_project(connection: sqlite3.Connection, project_id: str) -> 
             (project_id, GLOBAL_BLOCK_PROJECT_ID),
         )
     ]
+
+
+def has_document_type(connection: sqlite3.Connection, project_id: str, document_type: str) -> bool:
+    row = connection.execute(
+        "SELECT 1 FROM documents WHERE project_id = ? AND document_type = ? LIMIT 1",
+        (project_id, document_type),
+    ).fetchone()
+    return row is not None
 
 
 def reprocess_documents(connection: sqlite3.Connection, project_id: str) -> None:
@@ -549,15 +568,18 @@ def parse_block_library_rows(text: str) -> list[dict]:
         for article_match in article_matches:
             article_number = article_match.group(1)
             description = article_match.group(3).strip()
+            line_end = section.find("\n", article_match.start())
+            source_line = section[article_match.start() : line_end if line_end != -1 else len(section)]
+            dimensions = parse_dimensions(source_line)
             if not looks_like_article_number(article_number):
                 continue
             if article_number.startswith("APR"):
                 category = "Arbeitsplatten"
             else:
                 category = infer_category(description)
-            articles.append((article_number, description, category))
+            articles.append((article_number, description, category, dimensions))
 
-        for article_number, description, category in articles:
+        for article_number, description, category, dimensions in articles:
             for index, price_group in enumerate(price_groups):
                 block_price = block_prices[index] if index < len(block_prices) else None
                 rows.append(
@@ -566,6 +588,7 @@ def parse_block_library_rows(text: str) -> list[dict]:
                         "artikelnummer": article_number,
                         "beschreibung": description,
                         "kategorie": category,
+                        "masse": dimensions or "",
                         "blockpreis": block_price if block_price is not None else "",
                         "preisgruppe": price_group,
                         "verrechenbar": "ja",
@@ -766,6 +789,10 @@ FIELD_ALIASES = {
     "block_price": ["blockpreis", "block_preis", "verrechnungspreis"],
     "price_group": ["preisgruppe", "pg", "preis_gruppe"],
     "chargeable": ["verrechenbar", "berechenbar", "nicht_verrechenbar", "netto_artikel"],
+    "dimensions": ["masse", "mass", "abmessung", "abmessungen", "dimension", "dimensionen", "b_h_t", "breite_hoehe_tiefe"],
+    "width": ["breite", "b", "width"],
+    "height": ["hoehe", "h", "height"],
+    "depth": ["tiefe", "t", "depth"],
 }
 
 
@@ -801,6 +828,66 @@ def parse_int(value: str | None, default: int = 1) -> int:
     return int(match.group()) if match else default
 
 
+def parse_dimensions(*values: object) -> str | None:
+    text = " ".join(str(value) for value in values if value is not None and str(value).strip())
+    if not text:
+        return None
+
+    labelled = {}
+    for label, number in re.findall(r"\b([BHTbht])\s*[:=]?\s*(\d{2,4}(?:[,.]\d+)?)", text):
+        labelled[label.upper()] = normalize_dimension_number(number)
+    if all(key in labelled for key in ("B", "H", "T")):
+        return format_dimensions([labelled["B"], labelled["H"], labelled["T"]])
+
+    match = re.search(
+        r"(\d{2,4}(?:[,.]\d+)?)\s*(?:mm|cm)?\s*[x×/]\s*"
+        r"(\d{2,4}(?:[,.]\d+)?)\s*(?:mm|cm)?\s*[x×/]\s*"
+        r"(\d{2,4}(?:[,.]\d+)?)\s*(?:mm|cm)?",
+        text,
+        re.I,
+    )
+    if match:
+        return format_dimensions([normalize_dimension_number(value) for value in match.groups()])
+    return None
+
+
+def dimensions_from_row(normalized: dict, description: str, excerpt: str) -> str | None:
+    explicit = parse_dimensions(find_value(normalized, "dimensions"))
+    if explicit:
+        return explicit
+
+    width = find_value(normalized, "width")
+    height = find_value(normalized, "height")
+    depth = find_value(normalized, "depth")
+    if width and height and depth:
+        return format_dimensions([normalize_dimension_number(width), normalize_dimension_number(height), normalize_dimension_number(depth)])
+
+    return parse_dimensions(description, excerpt)
+
+
+def normalize_dimension_number(value: str) -> str:
+    cleaned = value.strip().replace(",", ".")
+    try:
+        number = float(cleaned)
+    except ValueError:
+        return cleaned
+    return str(int(number)) if number.is_integer() else str(number).rstrip("0").rstrip(".")
+
+
+def format_dimensions(values: list[str]) -> str:
+    return " x ".join(values)
+
+
+def same_dimensions(left: str | None, right: str | None) -> bool:
+    if not left or not right:
+        return True
+    return normalize_dimension_text(left) == normalize_dimension_text(right)
+
+
+def normalize_dimension_text(value: str) -> str:
+    return re.sub(r"\s+", "", value.lower().replace("×", "x"))
+
+
 def infer_category(description: str) -> str:
     text = description.lower()
     if "hoch" in text:
@@ -834,6 +921,7 @@ def persist_extraction(connection: sqlite3.Connection, project_id: str, document
         price_group = find_value(normalized, "price_group")
         block_price = parse_money(find_value(normalized, "block_price"))
         excerpt = " | ".join(str(value) for value in row.values() if value)[:500]
+        dimensions = dimensions_from_row(normalized, description, excerpt)
 
         if block_price is not None or (document_type == "Blockunterlage" and block_number):
             chargeable_text = find_value(normalized, "chargeable").lower()
@@ -842,10 +930,10 @@ def persist_extraction(connection: sqlite3.Connection, project_id: str, document
                 """
                 INSERT INTO block_rules (
                   id, project_id, document_id, block_number, article_number,
-                  block_price, price_group, chargeable, source_file, source_excerpt, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  block_price, price_group, dimensions, chargeable, source_file, source_excerpt, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (str(uuid4()), project_id, document_id, block_number or "BLOCK-OHNE-NR", article_number, block_price, price_group, chargeable, filename, excerpt, stamp),
+                (str(uuid4()), project_id, document_id, block_number or "BLOCK-OHNE-NR", article_number, block_price, price_group, dimensions, chargeable, filename, excerpt, stamp),
             )
             rules += 1
 
@@ -855,8 +943,8 @@ def persist_extraction(connection: sqlite3.Connection, project_id: str, document
                 INSERT INTO extracted_positions (
                   id, project_id, document_id, document_type, article_number,
                   description, category, quantity, gross_price, net_price,
-                  block_number, price_group, source_file, source_excerpt, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  block_number, price_group, dimensions, source_file, source_excerpt, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(uuid4()),
@@ -871,6 +959,7 @@ def persist_extraction(connection: sqlite3.Connection, project_id: str, document
                     net_price,
                     block_number,
                     price_group,
+                    dimensions,
                     filename,
                     excerpt,
                     stamp,
@@ -947,7 +1036,14 @@ def get_ab_block_data(connection: sqlite3.Connection, project_id: str) -> dict |
     return None
 
 
-def write_reconciled_articles(connection: sqlite3.Connection, project_id: str, positions: list[dict], rules: list[dict], ab_block_data: dict | None = None) -> None:
+def write_reconciled_articles(
+    connection: sqlite3.Connection,
+    project_id: str,
+    positions: list[dict],
+    rules: list[dict],
+    ab_block_data: dict | None = None,
+    has_confirmation_document: bool = False,
+) -> None:
     by_article: dict[str, dict[str, list[dict]]] = {}
     for position in positions:
         bucket = by_article.setdefault(position["article_number"], {"Bestellung": [], "Auftragsbestätigung": [], "Sonstiges": []})
@@ -966,6 +1062,19 @@ def write_reconciled_articles(connection: sqlite3.Connection, project_id: str, p
         confirmation = first(groups.get("Auftragsbestätigung", []))
         fallback = first(groups.get("Sonstiges", [])) or order or confirmation
         rule = rules_by_article.get(article_number)
+        planned_dimensions = (order or fallback or confirmation).get("dimensions")
+        manufacturer_dimensions = (
+            (confirmation.get("dimensions") if confirmation else None)
+            or (rule.get("dimensions") if rule else None)
+            or ((fallback or {}).get("dimensions") if fallback and fallback is not order else None)
+        )
+        dimension_status = "offen"
+        if planned_dimensions and manufacturer_dimensions:
+            dimension_status = "ok" if same_dimensions(planned_dimensions, manufacturer_dimensions) else "abweichung"
+        elif planned_dimensions:
+            dimension_status = "Herstellermaß offen"
+        elif manufacturer_dimensions:
+            dimension_status = "Planmaß fehlt"
         quantity = int((confirmation or order or fallback)["quantity"])
         single_price = (
             (order.get("gross_price") if order else None)
@@ -1008,11 +1117,18 @@ def write_reconciled_articles(connection: sqlite3.Connection, project_id: str, p
             status = "Rückfrage"
             comments.append(f"Mengenabweichung Bestellung {order_qty}, AB {confirmation_qty}.")
         if order and not confirmation:
-            status = "fehlt in AB"
-            comments.append("Artikel ist in der Bestellung vorhanden, aber nicht in der AB.")
+            if has_confirmation_document:
+                status = "fehlt in AB"
+                comments.append("Artikel ist in der Bestellung vorhanden, aber nicht in der AB.")
+            else:
+                status = "AB offen"
+                comments.append("AB vom Hersteller noch offen.")
         if confirmation and not order:
             status = "zusätzlich in AB"
             comments.append("Artikel ist in der AB vorhanden, aber nicht in der Bestellung.")
+        if dimension_status == "abweichung":
+            status = "Rückfrage"
+            comments.append(f"Maßabweichung: geplant {planned_dimensions}, Hersteller {manufacturer_dimensions}.")
 
         source_refs = {
             "bestellung": order["source_file"] if order else None,
@@ -1027,8 +1143,9 @@ def write_reconciled_articles(connection: sqlite3.Connection, project_id: str, p
               id, project_id, article_number, description, category, quantity,
               single_price, block_price, source, status, comment, order_quantity,
               confirmation_quantity, block_number, price_group, order_found,
-              confirmation_found, source_refs
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              confirmation_found, source_refs, planned_dimensions, manufacturer_dimensions,
+              dimension_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(uuid4()),
@@ -1049,6 +1166,9 @@ def write_reconciled_articles(connection: sqlite3.Connection, project_id: str, p
                 1 if order else 0,
                 1 if confirmation else 0,
                 json.dumps(source_refs, ensure_ascii=False),
+                planned_dimensions,
+                manufacturer_dimensions,
+                dimension_status,
             ),
         )
 
@@ -1131,9 +1251,10 @@ def write_reconciled_if_possible(connection: sqlite3.Connection, project_id: str
     positions = [row_to_dict(row) for row in connection.execute("SELECT * FROM extracted_positions WHERE project_id = ?", (project_id,))]
     rules = block_rules_for_project(connection, project_id)
     ab_block_data = get_ab_block_data(connection, project_id)
+    has_confirmation_document = has_document_type(connection, project_id, "Auftragsbestätigung")
     connection.execute("DELETE FROM articles WHERE project_id = ?", (project_id,))
     if positions:
-        write_reconciled_articles(connection, project_id, positions, rules, ab_block_data)
+        write_reconciled_articles(connection, project_id, positions, rules, ab_block_data, has_confirmation_document)
     connection.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (now_iso(), project_id))
 
 
@@ -1146,7 +1267,7 @@ def export_csv(project_id: str) -> Path:
         writer.writerow(["Kommission", payload["project"]["commission"]])
         writer.writerow(["Status", payload["project"]["status"]])
         writer.writerow([])
-        writer.writerow(["Art.-Nr.", "Bezeichnung", "Kategorie", "Menge", "Menge Bestellung", "Menge AB", "Einzelpreis", "Blockpreis", "Blocknummer", "Preisgruppe", "Ersparnis", "Status", "Quelle", "Kommentar"])
+        writer.writerow(["Art.-Nr.", "Bezeichnung", "Kategorie", "Menge", "Menge Bestellung", "Menge AB", "Planmaß", "Herstellermaß", "Maßstatus", "Einzelpreis", "Blockpreis", "Blocknummer", "Preisgruppe", "Ersparnis", "Status", "Quelle", "Kommentar"])
         for article in payload["articles"]:
             saving = (article["single_price"] - article["block_price"]) * article["quantity"]
             writer.writerow(
@@ -1157,6 +1278,9 @@ def export_csv(project_id: str) -> Path:
                     article["quantity"],
                     article.get("order_quantity") or "",
                     article.get("confirmation_quantity") or "",
+                    article.get("planned_dimensions") or "",
+                    article.get("manufacturer_dimensions") or "",
+                    article.get("dimension_status") or "",
                     money_number(article["single_price"]),
                     money_number(article["block_price"]),
                     article.get("block_number") or "",
@@ -1257,7 +1381,7 @@ def clear_order_confirmation(project_id: str) -> dict:
         rules = block_rules_for_project(connection, project_id)
         connection.execute("DELETE FROM articles WHERE project_id = ?", (project_id,))
         if positions:
-            write_reconciled_articles(connection, project_id, positions, rules)
+            write_reconciled_articles(connection, project_id, positions, rules, None, False)
 
         add_timeline(
             connection,
