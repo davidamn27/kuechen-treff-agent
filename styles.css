@@ -734,15 +734,66 @@ tfoot td:nth-child(2) {
 }
 
 .action-panel,
+.agent-panel,
 .mail-panel,
 .history-panel {
   padding: 20px 20px 24px;
 }
 
 .action-panel h2,
+.agent-panel h2,
 .mail-panel h2,
 .history-panel h2 {
   margin-bottom: 18px;
+}
+
+.agent-grid {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.agent-grid article,
+.agent-list article {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  background: #fff;
+}
+
+.agent-grid span,
+.agent-list b {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 900;
+  margin-bottom: 6px;
+}
+
+.agent-grid strong {
+  display: block;
+  font-size: 20px;
+  line-height: 1.15;
+  color: #1d2430;
+}
+
+.agent-grid small,
+.agent-list small,
+.agent-list span {
+  display: block;
+  color: #5f6674;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.agent-list {
+  display: grid;
+  gap: 10px;
+}
+
+.agent-list b {
+  color: #1d2430;
+  margin-bottom: 4px;
 }
 
 .action-panel button {

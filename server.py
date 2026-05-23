@@ -281,11 +281,13 @@ def project_payload(project_id: str = CURRENT_PROJECT_ID) -> dict:
         timeline = [row_to_dict(row) for row in connection.execute("SELECT * FROM timeline WHERE project_id = ? ORDER BY created_at DESC LIMIT 10", (project_id,))]
         mail = connection.execute("SELECT * FROM mail_drafts WHERE project_id = ? ORDER BY updated_at DESC LIMIT 1", (project_id,)).fetchone()
         outbox_count = connection.execute("SELECT COUNT(*) AS count FROM outbox WHERE project_id = ?", (project_id,)).fetchone()["count"]
+        ab_block_data = get_ab_block_data(connection, project_id)
 
     total_savings = sum((article["single_price"] - article["block_price"]) * article["quantity"] for article in articles)
     total_net = sum(article["block_price"] * article["quantity"] for article in articles)
     questions = sum(1 for article in articles if "rückfrage" in article["status"].lower())
     open_savings = sum(max(0, (article["single_price"] - article["block_price"]) * article["quantity"]) for article in articles if "geprüft" not in article["status"].lower())
+    insights = build_agent_insights(articles, block_rules, ab_block_data)
 
     return {
         "project": row_to_dict(project),
@@ -306,6 +308,7 @@ def project_payload(project_id: str = CURRENT_PROJECT_ID) -> dict:
         "documents": documents,
         "positions": positions,
         "blockRules": block_rules,
+        "insights": insights,
         "timeline": timeline,
         "mailDraft": row_to_dict(mail) if mail else None,
     }
@@ -1006,6 +1009,7 @@ def extract_ab_block_data(text: str) -> dict | None:
     moebel_brutto: float | None = None
     eg_brutto: float | None = None
     zubehoer_brutto: float | None = None
+    block_number: str | None = None
     article_wg: dict[str, str] = {}
 
     price_pat = r"(\d{1,3}(?:\.\d{3})*,\d{2})\s*$"
@@ -1015,10 +1019,18 @@ def extract_ab_block_data(text: str) -> dict | None:
     for line in text.splitlines():
         s = line.strip()
 
-        m = re.match(r"Abrechnung\s+Block\s+BC\d+\s+BL\s+" + price_pat, s)
+        m = re.match(r"Abrechnung\s+Block\s+(BC\d+)\s+BL\s+" + price_pat, s)
         if m:
-            bc_price = parse_money(m.group(1))
+            block_number = m.group(1)
+            bc_price = parse_money(m.group(2))
             continue
+
+        if bc_price is None:
+            m = re.search(r"\b(?:Blockwert|Blockpreis|Block)\b.*?(BC\d+)?.*?(\d{1,3}(?:\.\d{3})*,\d{2})", s, re.I)
+            if m:
+                block_number = block_number or m.group(1)
+                bc_price = parse_money(m.group(2))
+                continue
 
         m = re.search(r"Summe Auftragswert M.belteile brutto.*?" + price_pat, s)
         if m:
@@ -1045,6 +1057,7 @@ def extract_ab_block_data(text: str) -> dict | None:
         return None
 
     return {
+        "block_number": block_number or "",
         "bc_price": bc_price,
         "moebel_eg_brutto": moebel_brutto + (eg_brutto or 0.0),
         "zubehoer_brutto": zubehoer_brutto or 0.0,
@@ -1060,6 +1073,125 @@ def get_ab_block_data(connection: sqlite3.Connection, project_id: str) -> dict |
     if row and row[0]:
         return extract_ab_block_data(row[0])
     return None
+
+
+def build_agent_insights(articles: list[dict], block_rules: list[dict], ab_block_data: dict | None) -> dict:
+    order_count = sum(1 for article in articles if article.get("order_found"))
+    confirmation_count = sum(1 for article in articles if article.get("confirmation_found"))
+    missing_in_ab = [article for article in articles if article.get("order_found") and not article.get("confirmation_found")]
+    additional_in_ab = [article for article in articles if article.get("confirmation_found") and not article.get("order_found")]
+    quantity_mismatches = [
+        article
+        for article in articles
+        if article.get("order_quantity") is not None
+        and article.get("confirmation_quantity") is not None
+        and article.get("order_quantity") != article.get("confirmation_quantity")
+    ]
+    dimension_mismatches = [article for article in articles if article.get("dimension_status") == "abweichung"]
+
+    return {
+        "abComparison": {
+            "order_count": order_count,
+            "confirmation_count": confirmation_count,
+            "missing_in_ab_count": len(missing_in_ab),
+            "additional_in_ab_count": len(additional_in_ab),
+            "quantity_mismatch_count": len(quantity_mismatches),
+            "dimension_mismatch_count": len(dimension_mismatches),
+            "dimension_mismatches": comparison_preview(dimension_mismatches, "Maßabweichung"),
+            "missing_in_ab": comparison_preview(missing_in_ab, "Fehlt in AB"),
+            "additional_in_ab": comparison_preview(additional_in_ab, "Zusätzlich in AB"),
+        },
+        "fillValue": build_fill_value_insight(ab_block_data, block_rules),
+    }
+
+
+def comparison_preview(articles: list[dict], label: str, limit: int = 4) -> list[dict]:
+    preview = []
+    for article in articles[:limit]:
+        preview.append(
+            {
+                "article_number": article.get("article_number", ""),
+                "description": article.get("description", ""),
+                "label": label,
+                "planned_dimensions": article.get("planned_dimensions") or "",
+                "manufacturer_dimensions": article.get("manufacturer_dimensions") or "",
+                "comment": article.get("comment") or "",
+            }
+        )
+    return preview
+
+
+def build_fill_value_insight(ab_block_data: dict | None, block_rules: list[dict]) -> dict:
+    if not ab_block_data:
+        return {
+            "available": False,
+            "message": "AB hochladen, um Blockwert und Füllwert zu prüfen.",
+            "block_price": 0.0,
+            "actual_value": 0.0,
+            "fill_value": 0.0,
+            "suggestions": [],
+        }
+
+    block_price = ab_block_data.get("bc_price") or 0.0
+    actual_value = ab_block_data.get("moebel_eg_brutto") or 0.0
+    fill_value = round(max(0.0, block_price - actual_value), 2)
+    return {
+        "available": True,
+        "message": "Füllwert offen." if fill_value > 0 else "Blockwert ist ausgeschöpft oder überschritten.",
+        "block_price": round(block_price, 2),
+        "actual_value": round(actual_value, 2),
+        "fill_value": fill_value,
+        "suggestions": suggest_fill_items(block_rules, fill_value),
+    }
+
+
+def suggest_fill_items(block_rules: list[dict], fill_value: float, limit: int = 2) -> list[dict]:
+    if fill_value <= 0:
+        return []
+    seen = set()
+    candidates = []
+    for rule in block_rules:
+        article_number = rule.get("article_number") or ""
+        description = rule.get("source_excerpt") or article_number
+        key = (article_number, description)
+        if not article_number or key in seen:
+            continue
+        seen.add(key)
+        estimated_value = suggestion_value(rule)
+        if estimated_value <= 0:
+            continue
+        distance = abs(fill_value - estimated_value)
+        if estimated_value <= fill_value * 1.15:
+            candidates.append((distance, -estimated_value, rule, estimated_value))
+
+    suggestions = []
+    for _distance, _negative_value, rule, estimated_value in sorted(candidates)[:limit]:
+        suggestions.append(
+            {
+                "article_number": rule.get("article_number") or "",
+                "description": rule_description(rule),
+                "estimated_value": round(estimated_value, 2),
+                "block_number": rule.get("block_number") or "",
+                "price_group": rule.get("price_group") or "",
+            }
+        )
+    return suggestions
+
+
+def suggestion_value(rule: dict) -> float:
+    gross_price = rule.get("gross_price") or 0.0
+    block_price = rule.get("block_price") or 0.0
+    if gross_price and block_price and gross_price > block_price * 1.5:
+        return min(gross_price, block_price)
+    return gross_price or block_price
+
+
+def rule_description(rule: dict) -> str:
+    excerpt = rule.get("source_excerpt") or ""
+    parts = [part.strip() for part in excerpt.split("|")]
+    if len(parts) >= 3:
+        return parts[2]
+    return rule.get("article_number") or "Ergänzungsposition"
 
 
 def write_reconciled_articles(

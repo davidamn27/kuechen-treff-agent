@@ -25,6 +25,11 @@ const mailDraftButton = document.querySelector("#mailDraftButton");
 const archiveButton = document.querySelector("#archiveButton");
 const sendMailButton = document.querySelector("#sendMailButton");
 const replaceDocsButton = document.querySelector("#replaceDocsButton");
+const abComparisonStatus = document.querySelector("#abComparisonStatus");
+const abComparisonDetail = document.querySelector("#abComparisonDetail");
+const fillValueStatus = document.querySelector("#fillValueStatus");
+const fillValueDetail = document.querySelector("#fillValueDetail");
+const agentSuggestions = document.querySelector("#agentSuggestions");
 
 let currentProjectId = "PRJ-START";
 let selectedDocumentType = "Bestellung";
@@ -244,7 +249,7 @@ async function api(url, options = {}) {
 }
 
 function renderProject(payload) {
-  const { project, summary, articles, documents, timeline: entries, mailDraft } = payload;
+  const { project, summary, articles, documents, timeline: entries, mailDraft, insights } = payload;
   currentProjectId = project.id;
 
   projectTitle.textContent = `Projekt: ${project.name}`;
@@ -253,8 +258,47 @@ function renderProject(payload) {
   renderKpis(summary, project.status);
   renderArticles(articles, summary);
   renderDocuments(documents);
+  renderInsights(insights);
   renderTimeline(entries);
   renderMail(mailDraft);
+}
+
+function renderInsights(insights) {
+  if (!insights) {
+    return;
+  }
+
+  const ab = insights.abComparison || {};
+  const issueCount = (ab.missing_in_ab_count || 0) + (ab.additional_in_ab_count || 0) + (ab.quantity_mismatch_count || 0) + (ab.dimension_mismatch_count || 0);
+  abComparisonStatus.textContent = ab.confirmation_count ? `${issueCount} Prüfpunkt(e)` : "AB noch offen";
+  abComparisonDetail.textContent = ab.confirmation_count
+    ? `${ab.missing_in_ab_count || 0} fehlen, ${ab.additional_in_ab_count || 0} zusätzlich, ${ab.dimension_mismatch_count || 0} Maßabweichung(en)`
+    : `${ab.order_count || 0} Bestellposition(en) gegen Blockdatenbank bereit.`;
+
+  const fill = insights.fillValue || {};
+  fillValueStatus.textContent = fill.available ? formatMoney(fill.fill_value || 0) : "AB offen";
+  fillValueDetail.textContent = fill.available
+    ? `Block ${formatMoney(fill.block_price || 0)} · Warenwert ${formatMoney(fill.actual_value || 0)}`
+    : fill.message || "AB hochladen, um den Füllwert zu prüfen.";
+
+  const mismatchItems = [...(ab.dimension_mismatches || []), ...(ab.missing_in_ab || []), ...(ab.additional_in_ab || [])].slice(0, 3);
+  const suggestionItems = fill.suggestions || [];
+  agentSuggestions.innerHTML = [
+    ...mismatchItems.map((item) => `
+      <article>
+        <b>${escapeHtml(item.label)}</b>
+        <span>${escapeHtml(item.article_number)} · ${escapeHtml(item.description)}</span>
+        ${item.planned_dimensions || item.manufacturer_dimensions ? `<small>${escapeHtml(item.planned_dimensions || "-")} → ${escapeHtml(item.manufacturer_dimensions || "-")}</small>` : ""}
+      </article>
+    `),
+    ...suggestionItems.map((item) => `
+      <article>
+        <b>Füllwert-Vorschlag</b>
+        <span>${escapeHtml(item.article_number)} · ${escapeHtml(item.description)}</span>
+        <small>${formatMoney(item.estimated_value)} · Block ${escapeHtml(item.block_number)} PG ${escapeHtml(item.price_group)}</small>
+      </article>
+    `),
+  ].join("") || `<article><b>Keine offenen Agenten-Hinweise</b><span>Nach der AB werden Füllwert und Abweichungen automatisch ergänzt.</span></article>`;
 }
 
 function renderKpis(summary, status) {

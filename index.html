@@ -273,6 +273,23 @@
           </div>
 
           <aside class="right-column">
+            <section class="panel agent-panel">
+              <h2>Agenten-Auswertung</h2>
+              <div class="agent-grid">
+                <article>
+                  <span>AB-Abgleich</span>
+                  <strong id="abComparisonStatus">Noch keine AB</strong>
+                  <small id="abComparisonDetail">Bestellung kann bereits gegen die Blockdatenbank geprüft werden.</small>
+                </article>
+                <article>
+                  <span>Füllwert</span>
+                  <strong id="fillValueStatus">offen</strong>
+                  <small id="fillValueDetail">AB hochladen, um den Block-Füllwert zu berechnen.</small>
+                </article>
+              </div>
+              <div class="agent-list" id="agentSuggestions"></div>
+            </section>
+
             <section class="panel action-panel">
               <h2>Aktionen</h2>
               <button type="button" id="recalculateButton"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7L20 8"/><path d="M20 4v4h-4"/></svg>Einsparungen neu berechnen</button>
