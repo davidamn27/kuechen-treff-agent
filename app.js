@@ -282,6 +282,7 @@ function renderInsights(insights) {
     : `${ab.order_count || 0} Bestellposition(en) gegen Blockdatenbank bereit.`;
 
   const fill = insights.fillValue || {};
+  const blockFinder = insights.blockFinder || {};
   fillValueStatus.textContent = fill.available ? formatMoney(fill.fill_value || 0) : "AB offen";
   fillValueDetail.textContent = fill.available
     ? `Block ${formatMoney(fill.block_price || 0)} · Warenwert ${formatMoney(fill.actual_value || 0)}`
@@ -289,7 +290,15 @@ function renderInsights(insights) {
 
   const mismatchItems = [...(ab.dimension_mismatches || []), ...(ab.missing_in_ab || []), ...(ab.additional_in_ab || [])].slice(0, 3);
   const suggestionItems = fill.suggestions || [];
+  const blockFinderItems = blockFinder.available ? (blockFinder.candidates || []).slice(0, 4) : [];
   agentSuggestions.innerHTML = [
+    ...blockFinderItems.map((item) => `
+      <article>
+        <b>Häcker Blockfinder ${escapeHtml(item.block_number)} · PG ${escapeHtml(item.price_group)}</b>
+        <span>Blockpreis ${formatMoney(item.block_price)} · Möbel-Füllwert ${formatMoney(item.fill_gross)} · E-Geräte-Füllwert ${formatMoney(item.fill_net)}</span>
+        <small>Möbel ${formatMoney(item.furniture_block_value)} / E-Geräte ${formatMoney(item.appliance_block_value)}</small>
+      </article>
+    `),
     ...mismatchItems.map((item) => `
       <article>
         <b>${escapeHtml(item.label)}</b>

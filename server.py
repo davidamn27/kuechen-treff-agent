@@ -29,6 +29,7 @@ UPLOAD_DIR = DATA_DIR / "uploads"
 EXPORT_DIR = DATA_DIR / "exports"
 DB_PATH = DATA_DIR / "kuechen_agent.sqlite3"
 DEFAULT_BLOCK_LIBRARY_PATH = DATA_DIR / "alliance_haecker_2026_concept130_blockdatenbank.csv"
+DEFAULT_BLOCK_LIBRARY_VERSION = "20260523-egeraete-netto-blockpreis"
 CURRENT_PROJECT_ID = "PRJ-START"
 GLOBAL_BLOCK_PROJECT_ID = "__BLOCK_LIBRARY__"
 
@@ -152,6 +153,7 @@ def init_db() -> None:
               block_number TEXT NOT NULL,
               article_number TEXT NOT NULL,
               gross_price REAL,
+              appliance_value REAL,
               block_price REAL,
               price_group TEXT,
               dimensions TEXT,
@@ -194,6 +196,7 @@ def init_db() -> None:
             "ALTER TABLE extracted_positions ADD COLUMN dimensions TEXT",
             "ALTER TABLE block_rules ADD COLUMN dimensions TEXT",
             "ALTER TABLE block_rules ADD COLUMN gross_price REAL",
+            "ALTER TABLE block_rules ADD COLUMN appliance_value REAL",
         ]:
             try:
                 connection.execute(statement)
@@ -276,6 +279,13 @@ def project_payload(project_id: str = CURRENT_PROJECT_ID) -> dict:
         project_block_rules = [row_to_dict(row) for row in connection.execute("SELECT * FROM block_rules WHERE project_id = ? ORDER BY created_at DESC LIMIT 100", (project_id,))]
         library_block_rules = [row_to_dict(row) for row in connection.execute("SELECT * FROM block_rules WHERE project_id = ? ORDER BY created_at DESC LIMIT 100", (GLOBAL_BLOCK_PROJECT_ID,))]
         block_rules = project_block_rules + library_block_rules
+        insight_block_rules = [
+            row_to_dict(row)
+            for row in connection.execute(
+                "SELECT * FROM block_rules WHERE project_id IN (?, ?)",
+                (project_id, GLOBAL_BLOCK_PROJECT_ID),
+            )
+        ]
         project_block_rule_count = connection.execute("SELECT COUNT(*) AS count FROM block_rules WHERE project_id = ?", (project_id,)).fetchone()["count"]
         library_block_rule_count = connection.execute("SELECT COUNT(*) AS count FROM block_rules WHERE project_id = ?", (GLOBAL_BLOCK_PROJECT_ID,)).fetchone()["count"]
         timeline = [row_to_dict(row) for row in connection.execute("SELECT * FROM timeline WHERE project_id = ? ORDER BY created_at DESC LIMIT 10", (project_id,))]
@@ -287,7 +297,7 @@ def project_payload(project_id: str = CURRENT_PROJECT_ID) -> dict:
     total_net = sum(article["block_price"] * article["quantity"] for article in articles)
     questions = sum(1 for article in articles if "rückfrage" in article["status"].lower())
     open_savings = sum(max(0, (article["single_price"] - article["block_price"]) * article["quantity"]) for article in articles if "geprüft" not in article["status"].lower())
-    insights = build_agent_insights(articles, block_rules, ab_block_data)
+    insights = build_agent_insights(articles, insight_block_rules, ab_block_data)
 
     return {
         "project": row_to_dict(project),
@@ -568,8 +578,10 @@ def parse_block_library_rows(text: str) -> list[dict]:
         price_groups = block_match.group(2).split()
         bek_match = re.search(r"BEK\s+.+?\s+zur\s+Verr\s+([0-9.,\s]+)", section)
         bek_prices = parse_price_list(bek_match.group(1) if bek_match else "")
-        price_match = re.search(r"Blockpreis\s+([0-9.,\s]+)", section)
+        price_match = re.search(r"Blockpreis[^\n]*?((?:\d{1,3}(?:\.\d{3})*,\d{2}\s*)+)", section)
         block_prices = parse_price_list(price_match.group(1) if price_match else "")
+        appliance_match = re.search(r"E-Geräte\s+Netto\s+zur\s+Verr\.?\s+([0-9.,\s]+)", section)
+        appliance_prices = parse_price_list(appliance_match.group(1) if appliance_match else "")
         article_matches = re.finditer(
             r"(?m)^\s*\d+\s*x\s+([A-Z0-9/-]{3,24})\s+([A-Z0-9/-]{3,24})?\s+(.+?)(?=\s{2,}H:|\n|$)",
             section,
@@ -595,6 +607,7 @@ def parse_block_library_rows(text: str) -> list[dict]:
             for index, price_group in enumerate(price_groups):
                 bek_price = bek_prices[index] if index < len(bek_prices) else None
                 block_price = block_prices[index] if index < len(block_prices) else None
+                appliance_value = appliance_prices[index] if index < len(appliance_prices) else None
                 rows.append(
                     {
                         "blocknummer": block_number,
@@ -605,6 +618,7 @@ def parse_block_library_rows(text: str) -> list[dict]:
                         "kategorie": category,
                         "masse": dimensions or "",
                         "bruttopreis": bek_price if bek_price is not None else "",
+                        "egeraete_netto": appliance_value if appliance_value is not None else "",
                         "blockpreis": block_price if block_price is not None else "",
                         "preisgruppe": price_group,
                         "verrechenbar": "ja",
@@ -803,6 +817,7 @@ FIELD_ALIASES = {
     "net_price": ["nettopreis", "netto", "finaler_preis", "ab_preis", "neuer_preis"],
     "block_number": ["blocknummer", "block", "block_nr"],
     "block_price": ["blockpreis", "block_preis", "verrechnungspreis"],
+    "appliance_value": ["egeraete_netto", "e_geraete_netto", "blockwert_e_geraete_netto", "geraete_netto", "spuelen_netto", "eg_wert"],
     "price_group": ["preisgruppe", "pg", "preis_gruppe"],
     "chargeable": ["verrechenbar", "berechenbar", "nicht_verrechenbar", "netto_artikel"],
     "dimensions": ["masse", "mass", "abmessung", "abmessungen", "dimension", "dimensionen", "b_h_t", "breite_hoehe_tiefe"],
@@ -936,6 +951,7 @@ def persist_extraction(connection: sqlite3.Connection, project_id: str, document
         block_number = find_value(normalized, "block_number")
         price_group = find_value(normalized, "price_group")
         block_price = parse_money(find_value(normalized, "block_price"))
+        appliance_value = parse_money(find_value(normalized, "appliance_value"))
         excerpt = " | ".join(str(value) for value in row.values() if value)[:500]
         dimensions = dimensions_from_row(normalized, description, excerpt)
 
@@ -946,9 +962,9 @@ def persist_extraction(connection: sqlite3.Connection, project_id: str, document
                 """
                 INSERT INTO block_rules (
                   id, project_id, document_id, block_number, article_number,
-                  gross_price, block_price, price_group, dimensions, chargeable,
+                  gross_price, appliance_value, block_price, price_group, dimensions, chargeable,
                   source_file, source_excerpt, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(uuid4()),
@@ -957,6 +973,7 @@ def persist_extraction(connection: sqlite3.Connection, project_id: str, document
                     block_number or "BLOCK-OHNE-NR",
                     article_number,
                     gross_price,
+                    appliance_value,
                     block_price,
                     price_group,
                     dimensions,
@@ -1004,7 +1021,8 @@ def extract_ab_block_data(text: str) -> dict | None:
     """
     Parse Häcker AB text for exact block pricing data.
 
-    Returns {bc_price, moebel_eg_brutto, zubehoer_brutto, article_wg} or None.
+    Returns block sums split like the Häcker blockfinder: furniture/APL,
+    E-Geräte/Spülen and Zubehör.
     article_wg maps article numbers to their WG codes (MB/EG/NE/BL).
     """
     bc_price: float | None = None
@@ -1012,6 +1030,7 @@ def extract_ab_block_data(text: str) -> dict | None:
     eg_brutto: float | None = None
     zubehoer_brutto: float | None = None
     block_number: str | None = None
+    price_group: str | None = None
     article_wg: dict[str, str] = {}
 
     price_pat = r"(\d{1,3}(?:\.\d{3})*,\d{2})\s*$"
@@ -1020,6 +1039,11 @@ def extract_ab_block_data(text: str) -> dict | None:
 
     for line in text.splitlines():
         s = line.strip()
+
+        if price_group is None:
+            pg_match = re.search(r"Preisgruppe\s*[:\-]?\s*([0-7])(?:\s*[-A-Z])?", s, re.I)
+            if pg_match:
+                price_group = pg_match.group(1)
 
         m = re.match(r"Abrechnung\s+Block\s+(BC\d+)\s+BL\s+" + price_pat, s)
         if m:
@@ -1060,7 +1084,10 @@ def extract_ab_block_data(text: str) -> dict | None:
 
     return {
         "block_number": block_number or "",
+        "price_group": price_group or "",
         "bc_price": bc_price,
+        "moebel_brutto": moebel_brutto,
+        "eg_brutto": eg_brutto or 0.0,
         "moebel_eg_brutto": moebel_brutto + (eg_brutto or 0.0),
         "zubehoer_brutto": zubehoer_brutto or 0.0,
         "article_wg": article_wg,
@@ -1103,7 +1130,8 @@ def build_agent_insights(articles: list[dict], block_rules: list[dict], ab_block
             "missing_in_ab": comparison_preview(missing_in_ab, "Fehlt in AB"),
             "additional_in_ab": comparison_preview(additional_in_ab, "Zusätzlich in AB"),
         },
-        "fillValue": build_fill_value_insight(ab_block_data, block_rules),
+        "fillValue": build_fill_value_insight(ab_block_data, block_rules, articles),
+        "blockFinder": build_blockfinder_insight(ab_block_data, block_rules, articles),
     }
 
 
@@ -1123,7 +1151,7 @@ def comparison_preview(articles: list[dict], label: str, limit: int = 4) -> list
     return preview
 
 
-def build_fill_value_insight(ab_block_data: dict | None, block_rules: list[dict]) -> dict:
+def build_fill_value_insight(ab_block_data: dict | None, block_rules: list[dict], articles: list[dict] | None = None) -> dict:
     if not ab_block_data:
         return {
             "available": False,
@@ -1134,9 +1162,12 @@ def build_fill_value_insight(ab_block_data: dict | None, block_rules: list[dict]
             "suggestions": [],
         }
 
-    block_price = ab_block_data.get("bc_price") or 0.0
-    actual_value = ab_block_data.get("moebel_eg_brutto") or 0.0
-    fill_value = round(max(0.0, block_price - actual_value), 2)
+    blockfinder = build_blockfinder_insight(ab_block_data, block_rules, articles)
+    selected = blockfinder.get("selected") or {}
+    block_price = selected.get("block_price") or ab_block_data.get("bc_price") or 0.0
+    actual_value = (ab_block_data.get("moebel_brutto") or 0.0) + (ab_block_data.get("eg_brutto") or 0.0)
+    raw_fill_value = selected.get("fill_total") if selected else block_price - actual_value
+    fill_value = round(max(0.0, raw_fill_value or 0.0), 2)
     return {
         "available": True,
         "message": "Füllwert offen." if fill_value > 0 else "Blockwert ist ausgeschöpft oder überschritten.",
@@ -1144,6 +1175,91 @@ def build_fill_value_insight(ab_block_data: dict | None, block_rules: list[dict]
         "actual_value": round(actual_value, 2),
         "fill_value": fill_value,
         "suggestions": suggest_fill_items(block_rules, fill_value),
+    }
+
+
+def build_blockfinder_insight(ab_block_data: dict | None, block_rules: list[dict], articles: list[dict] | None = None, limit: int = 8) -> dict:
+    if not ab_block_data:
+        return {"available": False, "message": "AB hochladen, um den Häcker-Blockfinder-Vergleich zu berechnen.", "candidates": []}
+
+    furniture_value = ab_block_data.get("moebel_brutto") or 0.0
+    appliance_value = ab_block_data.get("eg_brutto") or 0.0
+    if furniture_value <= 0 and appliance_value <= 0:
+        return {"available": False, "message": "In der AB wurden noch keine getrennten Auftragswerte gefunden.", "candidates": []}
+
+    requested_pg = str(ab_block_data.get("price_group") or "").strip()
+    requested_block = str(ab_block_data.get("block_number") or "").strip()
+    order_aliases: set[str] = set()
+    for article in articles or []:
+        if article.get("order_found") or article.get("confirmation_found"):
+            order_aliases.update(position_aliases(article))
+    grouped: dict[tuple[str, str], dict] = {}
+    for rule in block_rules:
+        block_number = str(rule.get("block_number") or "").strip()
+        price_group = str(rule.get("price_group") or "").strip()
+        if not block_number or not price_group:
+            continue
+        gross_price = rule.get("gross_price") or 0.0
+        block_price = rule.get("block_price") or 0.0
+        eg_value = rule.get("appliance_value") or 0.0
+        if gross_price <= 0 or block_price <= 0:
+            continue
+        key = (block_number, price_group)
+        matched = len(rule_aliases(rule) & order_aliases) if order_aliases else 0
+        if key not in grouped or (not grouped[key].get("appliance_block_value") and eg_value):
+            grouped[key] = {
+                "block_number": block_number,
+                "price_group": price_group,
+                "furniture_block_value": gross_price,
+                "appliance_block_value": eg_value,
+                "block_price": block_price,
+                "matched_articles": 0,
+            }
+        grouped[key]["matched_articles"] += matched
+
+    preferred_pg = requested_pg or "2"
+    candidates = []
+    for candidate in grouped.values():
+        if preferred_pg and candidate["price_group"] != preferred_pg:
+            continue
+        if order_aliases and not candidate.get("matched_articles") and candidate["block_number"] != requested_block:
+            continue
+        furniture_fill = round(furniture_value - candidate["furniture_block_value"], 2)
+        appliance_fill = round(appliance_value - candidate["appliance_block_value"], 2)
+        fill_total = round(furniture_fill + appliance_fill, 2)
+        score = (
+            0 if requested_block and candidate["block_number"] == requested_block else 1,
+            0 if appliance_value <= 0 or candidate["appliance_block_value"] > 0 else 1,
+            abs(min(0.0, furniture_fill)) + abs(min(0.0, appliance_fill)),
+            abs(fill_total),
+            -int(candidate.get("matched_articles") or 0),
+            candidate["block_price"],
+        )
+        candidates.append(
+            {
+                **candidate,
+                "actual_furniture_value": round(furniture_value, 2),
+                "actual_appliance_value": round(appliance_value, 2),
+                "fill_gross": furniture_fill,
+                "fill_net": appliance_fill,
+                "fill_total": fill_total,
+                "_score": score,
+            }
+        )
+
+    candidates.sort(key=lambda item: item["_score"])
+    for candidate in candidates:
+        candidate.pop("_score", None)
+
+    selected = candidates[0] if candidates else None
+    return {
+        "available": bool(candidates),
+        "message": "Häcker-Blockfinder-Werte aus AB und Alliance/Häcker-Datenbank berechnet." if candidates else "Keine passende Preisgruppe in der Blockdatenbank gefunden.",
+        "price_group": preferred_pg,
+        "actual_furniture_value": round(furniture_value, 2),
+        "actual_appliance_value": round(appliance_value, 2),
+        "selected": selected,
+        "candidates": candidates[:limit],
     }
 
 
@@ -1856,8 +1972,28 @@ def ensure_default_block_library(connection: sqlite3.Connection) -> None:
         "SELECT COUNT(*) AS count FROM block_rules WHERE project_id = ?",
         (GLOBAL_BLOCK_PROJECT_ID,),
     ).fetchone()["count"]
-    if existing:
+    current_version = connection.execute(
+        "SELECT analysis_notes FROM documents WHERE project_id = ? AND filename = ? ORDER BY uploaded_at DESC LIMIT 1",
+        (GLOBAL_BLOCK_PROJECT_ID, DEFAULT_BLOCK_LIBRARY_PATH.name),
+    ).fetchone()
+    has_appliance_values = connection.execute(
+        "SELECT COUNT(*) AS count FROM block_rules WHERE project_id = ? AND appliance_value IS NOT NULL",
+        (GLOBAL_BLOCK_PROJECT_ID,),
+    ).fetchone()["count"]
+    if existing and current_version and current_version["analysis_notes"] == DEFAULT_BLOCK_LIBRARY_VERSION and has_appliance_values:
         return
+
+    old_documents = [
+        row_to_dict(row)
+        for row in connection.execute(
+            "SELECT id FROM documents WHERE project_id = ? AND filename = ?",
+            (GLOBAL_BLOCK_PROJECT_ID, DEFAULT_BLOCK_LIBRARY_PATH.name),
+        )
+    ]
+    for document in old_documents:
+        connection.execute("DELETE FROM block_rules WHERE document_id = ?", (document["id"],))
+        connection.execute("DELETE FROM extracted_positions WHERE document_id = ?", (document["id"],))
+        connection.execute("DELETE FROM documents WHERE id = ?", (document["id"],))
 
     document_id = str(uuid4())
     stamp = now_iso()
@@ -1867,8 +2003,8 @@ def ensure_default_block_library(connection: sqlite3.Connection) -> None:
         """
         INSERT INTO documents (
           id, project_id, filename, stored_path, document_type,
-          content_type, size, uploaded_at, extracted_text, analysis_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          content_type, size, uploaded_at, extracted_text, analysis_status, analysis_notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             document_id,
@@ -1881,6 +2017,7 @@ def ensure_default_block_library(connection: sqlite3.Connection) -> None:
             stamp,
             text[:100000],
             "analysiert",
+            DEFAULT_BLOCK_LIBRARY_VERSION,
         ),
     )
     persist_extraction(
