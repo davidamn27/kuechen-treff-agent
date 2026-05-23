@@ -582,15 +582,16 @@ def parse_block_library_rows(text: str) -> list[dict]:
             line_end = section.find("\n", article_match.start())
             source_line = section[article_match.start() : line_end if line_end != -1 else len(section)]
             dimensions = parse_dimensions(source_line)
+            source_codes = sorted(extract_article_codes(source_line))
             if not looks_like_article_number(article_number):
                 continue
             if article_number.startswith("APR"):
                 category = "Arbeitsplatten"
             else:
                 category = infer_category(description)
-            articles.append((article_number, article_alias, description, category, dimensions))
+            articles.append((article_number, article_alias, source_codes, description, category, dimensions))
 
-        for article_number, article_alias, description, category, dimensions in articles:
+        for article_number, article_alias, source_codes, description, category, dimensions in articles:
             for index, price_group in enumerate(price_groups):
                 bek_price = bek_prices[index] if index < len(bek_prices) else None
                 block_price = block_prices[index] if index < len(block_prices) else None
@@ -599,6 +600,7 @@ def parse_block_library_rows(text: str) -> list[dict]:
                         "blocknummer": block_number,
                         "artikelnummer": article_number,
                         "artikelalias": article_alias if looks_like_article_number(article_alias) else "",
+                        "quellcodes": " ".join(source_codes),
                         "beschreibung": description,
                         "kategorie": category,
                         "masse": dimensions or "",
