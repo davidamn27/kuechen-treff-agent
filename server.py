@@ -1204,7 +1204,8 @@ def write_reconciled_articles(
 ) -> None:
     by_article: dict[str, dict[str, list[dict]]] = {}
     for position in positions:
-        bucket = by_article.setdefault(position["article_number"], {"Bestellung": [], "Auftragsbestätigung": [], "Sonstiges": []})
+        key = position_group_key(position, by_article.keys())
+        bucket = by_article.setdefault(key, {"Bestellung": [], "Auftragsbestätigung": [], "Sonstiges": []})
         bucket.setdefault(position["document_type"], bucket["Sonstiges"]).append(position)
 
     rules_by_article: dict[str, dict] = {}
@@ -1450,6 +1451,27 @@ def first_matching_article(rule: dict, article_numbers: set[str]) -> str | None:
     return None
 
 
+def position_group_key(position: dict, existing_keys) -> str:
+    aliases = position_aliases(position)
+    for key in existing_keys:
+        if haecker_article_aliases(str(key)) & aliases:
+            return str(key)
+    return position.get("article_number") or ""
+
+
+def position_aliases(position: dict) -> set[str]:
+    aliases = {position.get("article_number") or ""}
+    text = " ".join(
+        str(position.get(field) or "")
+        for field in ("description", "source_excerpt", "source_file")
+    )
+    aliases.update(extract_article_codes(text))
+    expanded = set()
+    for alias in aliases:
+        expanded.update(haecker_article_aliases(alias))
+    return {alias for alias in expanded if alias}
+
+
 def block_group_gross_total(block_rules: list[dict]) -> float:
     gross_values = [rule.get("gross_price") or 0.0 for rule in block_rules if rule.get("gross_price")]
     if not gross_values:
@@ -1472,11 +1494,23 @@ def matched_group_gross_total(block_rules: list[dict], matched_rules: list[tuple
 def rule_aliases(rule: dict) -> set[str]:
     aliases = {rule.get("article_number") or ""}
     excerpt = rule.get("source_excerpt") or ""
-    aliases.update(token for token in re.findall(r"\b[A-ZÄÖÜ][A-Z0-9ÄÖÜ/-]{2,24}\b", excerpt) if looks_like_article_number(token))
+    aliases.update(extract_article_codes(excerpt))
     expanded = set()
     for alias in aliases:
         expanded.update(haecker_article_aliases(alias))
     return {alias for alias in expanded if alias}
+
+
+def extract_article_codes(text: str) -> set[str]:
+    codes = set()
+    for token in re.findall(r"\b[A-ZÄÖÜ][A-Z0-9ÄÖÜ/-]{2,24}\b", text or ""):
+        if looks_like_article_number(token):
+            codes.add(token)
+    for group in re.findall(r"\(([^)]+)\)", text or ""):
+        for token in re.findall(r"\b[A-ZÄÖÜ]?[A-Z0-9ÄÖÜ/-]{2,24}\b", group):
+            if looks_like_article_number(token):
+                codes.add(token)
+    return codes
 
 
 def haecker_article_aliases(article_number: str) -> set[str]:
