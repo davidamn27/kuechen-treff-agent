@@ -347,7 +347,7 @@ function renderArticles(articles, summary) {
   tableFoot.innerHTML = `
     <tr>
       <td colspan="4">${summary.position_count} Positionen</td>
-      <td colspan="4">Gesamteinsparung (geschätzt)</td>
+      <td colspan="4">Auswertung</td>
       <td class="total">${formatMoney(summary.estimated_savings)}</td>
     </tr>
   `;
