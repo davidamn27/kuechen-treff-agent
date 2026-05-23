@@ -321,7 +321,7 @@ function formatDimensions(article) {
 
 function renderDocuments(documents) {
   if (!documents.length) {
-    fileList.innerHTML = `<article class="file-row"><div></div><div><strong>Noch keine Dateien hochgeladen</strong><small>Hier Bestellung und AB laden. Blöcke kommen aus der zentralen Blockdatenbank.</small></div><span></span></article>`;
+    fileList.innerHTML = `<article class="file-row"><div></div><div><strong>Noch keine Dateien hochgeladen</strong><small>Zuerst Bestellung und Vereinbarung/Blockunterlage laden. Die AB kommt später vom Hersteller dazu.</small></div><span></span></article>`;
     return;
   }
 
@@ -385,7 +385,7 @@ function iconClass(category) {
 
 function guessDocumentType(filename) {
   const lower = filename.toLowerCase();
-  if (lower.includes("block")) return "Blockunterlage";
+  if (lower.includes("block") || lower.includes("vereinbarung") || lower.includes("concept")) return "Blockunterlage";
   if (lower.includes("auftrag") || lower.includes("ab")) return "Auftragsbestätigung";
   if (lower.includes("bestell")) return "Bestellung";
   return "Sonstiges";
