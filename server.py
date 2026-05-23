@@ -28,6 +28,7 @@ DATA_DIR = ROOT / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
 EXPORT_DIR = DATA_DIR / "exports"
 DB_PATH = DATA_DIR / "kuechen_agent.sqlite3"
+DEFAULT_BLOCK_LIBRARY_PATH = DATA_DIR / "alliance_haecker_2026_concept130_blockdatenbank.csv"
 CURRENT_PROJECT_ID = "PRJ-START"
 GLOBAL_BLOCK_PROJECT_ID = "__BLOCK_LIBRARY__"
 
@@ -198,6 +199,8 @@ def init_db() -> None:
                 connection.execute(statement)
             except sqlite3.OperationalError:
                 pass
+
+        ensure_default_block_library(connection)
 
         project = connection.execute("SELECT id FROM projects WHERE id = ?", (CURRENT_PROJECT_ID,)).fetchone()
         if project:
@@ -1663,6 +1666,51 @@ def import_block_library_from_path(path: Path) -> tuple[int, int]:
             text,
         )
     return position_count, rule_count
+
+
+def ensure_default_block_library(connection: sqlite3.Connection) -> None:
+    if not DEFAULT_BLOCK_LIBRARY_PATH.exists():
+        return
+    existing = connection.execute(
+        "SELECT COUNT(*) AS count FROM block_rules WHERE project_id = ?",
+        (GLOBAL_BLOCK_PROJECT_ID,),
+    ).fetchone()["count"]
+    if existing:
+        return
+
+    document_id = str(uuid4())
+    stamp = now_iso()
+    filename = DEFAULT_BLOCK_LIBRARY_PATH.name
+    rows, text = parse_document(DEFAULT_BLOCK_LIBRARY_PATH, filename)
+    connection.execute(
+        """
+        INSERT INTO documents (
+          id, project_id, filename, stored_path, document_type,
+          content_type, size, uploaded_at, extracted_text, analysis_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            document_id,
+            GLOBAL_BLOCK_PROJECT_ID,
+            filename,
+            str(DEFAULT_BLOCK_LIBRARY_PATH.relative_to(ROOT)),
+            "Blockunterlage",
+            "text/csv",
+            DEFAULT_BLOCK_LIBRARY_PATH.stat().st_size,
+            stamp,
+            text[:100000],
+            "analysiert",
+        ),
+    )
+    persist_extraction(
+        connection,
+        GLOBAL_BLOCK_PROJECT_ID,
+        document_id,
+        "Blockunterlage",
+        filename,
+        rows,
+        text,
+    )
 
 
 def money_number(value: float) -> str:
