@@ -303,7 +303,6 @@ function renderInsights(insights) {
 
 function renderKpis(summary, status) {
   const values = [
-    [formatMoney(summary.estimated_savings), ""],
     [summary.position_count, "mit Einsparungspotenzial"],
     [formatMoney(summary.total_net), "nach Abzug der Einsparungen"],
     [status, `${summary.library_block_rule_count || 0} Regeln in Blockdatenbank`],
