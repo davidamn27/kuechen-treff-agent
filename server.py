@@ -1544,6 +1544,17 @@ def best_price(position: dict | None) -> float | None:
     return position.get("net_price") or position.get("gross_price")
 
 
+def guess_server_document_type(filename: str) -> str:
+    lower = filename.lower()
+    if "block" in lower or "vereinbarung" in lower or "concept" in lower:
+        return "Blockunterlage"
+    if "auftrag" in lower or "ab" in lower:
+        return "Auftragsbestätigung"
+    if "bestell" in lower:
+        return "Bestellung"
+    return "Sonstiges"
+
+
 def save_upload(project_id: str, parts: list[dict]) -> list[dict]:
     saved = []
     document_type = "Sonstiges"
@@ -1559,6 +1570,8 @@ def save_upload(project_id: str, parts: list[dict]) -> list[dict]:
             if not part["filename"]:
                 continue
             original_name = safe_filename(part["filename"])
+            if document_type == "Blockunterlage" or guess_server_document_type(original_name) == "Blockunterlage":
+                raise ValueError("Vereinbarungen sind bereits als zentrale Blockdatenbank hinterlegt. Bitte nur Bestellung oder AB hochladen.")
             stored_name = f"{uuid4()}_{original_name}"
             path = project_dir / stored_name
             path.write_bytes(part["data"])

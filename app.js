@@ -89,6 +89,12 @@ async function uploadFiles(files) {
   if (!files.length) {
     return;
   }
+  const blocked = [...files].find((file) => guessDocumentType(file.name) === "Blockunterlage");
+  if (blocked) {
+    uploadStatus.textContent = "Vereinbarungen sind bereits als Blockdatenbank hinterlegt. Bitte nur Bestellung oder AB hochladen.";
+    uploadStatus.classList.add("error");
+    return;
+  }
 
   const form = new FormData();
   form.append("document_type", selectedDocumentType || guessDocumentType(files[0].name));
@@ -364,7 +370,7 @@ function formatDimensions(article) {
 
 function renderDocuments(documents) {
   if (!documents.length) {
-    fileList.innerHTML = `<article class="file-row"><div></div><div><strong>Noch keine Dateien hochgeladen</strong><small>Zuerst Bestellung und Vereinbarung/Blockunterlage laden. Die AB kommt später vom Hersteller dazu.</small></div><span></span></article>`;
+    fileList.innerHTML = `<article class="file-row"><div></div><div><strong>Noch keine Dateien hochgeladen</strong><small>Bestellung hochladen. Die Alliance/Häcker-Blockdatenbank ist bereits hinterlegt; die AB kommt später dazu.</small></div><span></span></article>`;
     return;
   }
 
