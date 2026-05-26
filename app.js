@@ -29,6 +29,8 @@ const abComparisonStatus = document.querySelector("#abComparisonStatus");
 const abComparisonDetail = document.querySelector("#abComparisonDetail");
 const fillValueStatus = document.querySelector("#fillValueStatus");
 const fillValueDetail = document.querySelector("#fillValueDetail");
+const fillOptionStatus = document.querySelector("#fillOptionStatus");
+const fillOptionDetail = document.querySelector("#fillOptionDetail");
 const agentComparisonList = document.querySelector("#agentComparisonList");
 const agentFillList = document.querySelector("#agentFillList");
 const agentTabs = document.querySelectorAll("[data-agent-tab]");
@@ -350,6 +352,11 @@ function renderInsights(insights) {
 
   const mismatchItems = [...(ab.dimension_mismatches || []), ...(ab.missing_in_ab || []), ...(ab.additional_in_ab || [])].slice(0, 3);
   const suggestionItems = fill.suggestions || [];
+  const primaryFillSuggestion = suggestionItems[0];
+  fillOptionStatus.textContent = primaryFillSuggestion ? primaryFillSuggestion.label || "Option gefunden" : "offen";
+  fillOptionDetail.textContent = primaryFillSuggestion
+    ? primaryFillSuggestion.action || `${primaryFillSuggestion.article_number} · ${primaryFillSuggestion.description} · ${formatMoney(primaryFillSuggestion.estimated_value)}`
+    : "Passende Ergänzung wird nach der AB berechnet.";
   const recommendation = blockFinder.recommendation || blockFinder.selected;
   const currentBlock = blockFinder.current;
   const alternativeBlocks = blockFinder.available

@@ -749,6 +749,7 @@ tfoot td:nth-child(2) {
 
 .agent-grid {
   display: grid;
+  grid-template-columns: 1fr;
   gap: 10px;
   margin-bottom: 14px;
 }
