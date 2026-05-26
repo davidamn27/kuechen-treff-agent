@@ -29,7 +29,7 @@ UPLOAD_DIR = DATA_DIR / "uploads"
 EXPORT_DIR = DATA_DIR / "exports"
 DB_PATH = DATA_DIR / "kuechen_agent.sqlite3"
 DEFAULT_BLOCK_LIBRARY_PATH = DATA_DIR / "alliance_haecker_2026_concept130_blockdatenbank.csv"
-DEFAULT_BLOCK_LIBRARY_VERSION = "20260523-egeraete-netto-blockpreis"
+DEFAULT_BLOCK_LIBRARY_VERSION = "20260526-appliance-suggestions"
 CURRENT_PROJECT_ID = "PRJ-START"
 GLOBAL_BLOCK_PROJECT_ID = "__BLOCK_LIBRARY__"
 
@@ -686,7 +686,7 @@ def parse_block_library_rows(text: str) -> list[dict]:
         appliance_match = re.search(r"E-Geräte\s+Netto\s+zur\s+Verr\.?\s+([0-9.,\s]+)", section)
         appliance_prices = parse_price_list(appliance_match.group(1) if appliance_match else "")
         article_matches = re.finditer(
-            r"(?m)^\s*\d+\s*x\s+([A-Z0-9/-]{3,24})\s+([A-Z0-9/-]{3,24})?\s+(.+?)(?=\s{2,}H:|\n|$)",
+            r"(?m)^\s*\d+\s*x\s+([A-Z0-9/-]{3,24})(?:\s+([A-Z0-9/-]{3,24}))?\s+(.+?)(?=\s{2,}H:|\n|$)",
             section,
         )
         articles = []
@@ -700,7 +700,9 @@ def parse_block_library_rows(text: str) -> list[dict]:
             source_codes = sorted(extract_article_codes(source_line))
             if not looks_like_article_number(article_number):
                 continue
-            if article_number.startswith("APR"):
+            if article_number.startswith(("EG", "ES")):
+                category = "Elektrogeräte / Spülen"
+            elif article_number.startswith("APR"):
                 category = "Arbeitsplatten"
             else:
                 category = infer_category(description)
@@ -1398,18 +1400,9 @@ def suggest_fill_items(block_rules: list[dict], fill_value: float, selected_bloc
         return []
     suggestions = []
     if selected_block and selected_block.get("appliance_block_value"):
-        appliance_value = selected_block.get("appliance_block_value") or fill_value
-        suggestions.append(
-            {
-                "article_number": "E-GERAET",
-                "description": "Elektrogerät / Spüle ergänzen",
-                "estimated_value": round(min(fill_value, appliance_value), 2),
-                "block_number": selected_block.get("block_number") or "",
-                "price_group": selected_block.get("price_group") or "",
-                "label": "Empfehlung: Elektrogerät ergänzen",
-                "action": f"Noch ein Elektrogerät bis ca. {format_money(fill_value)} ergänzen.",
-            }
-        )
+        suggestions.extend(suggest_block_appliances(block_rules, fill_value, selected_block, limit))
+    if suggestions:
+        return suggestions[:limit]
     seen = set()
     candidates = []
     for rule in block_rules:
@@ -1443,6 +1436,50 @@ def suggest_fill_items(block_rules: list[dict], fill_value: float, selected_bloc
     return suggestions
 
 
+def suggest_block_appliances(block_rules: list[dict], fill_value: float, selected_block: dict, limit: int) -> list[dict]:
+    block_number = selected_block.get("block_number") or ""
+    price_group = str(selected_block.get("price_group") or "")
+    appliance_value = selected_block.get("appliance_block_value") or fill_value
+    seen = set()
+    suggestions = []
+    for rule in block_rules:
+        article_number = rule.get("article_number") or ""
+        if rule.get("block_number") != block_number or str(rule.get("price_group") or "") != price_group:
+            continue
+        if not article_number.startswith(("EG", "ES")) or article_number in seen:
+            continue
+        seen.add(article_number)
+        description = rule_description(rule)
+        suggestions.append(
+            {
+                "article_number": article_number,
+                "description": description,
+                "estimated_value": round(min(fill_value, appliance_value), 2),
+                "block_number": block_number,
+                "price_group": price_group,
+                "label": "Empfehlung: Elektrogerät ergänzen" if article_number.startswith("EG") else "Empfehlung: Spüle ergänzen",
+                "action": f"{article_number} · {description} ergänzen; liegt im Füllwert von ca. {format_money(fill_value)}.",
+            }
+        )
+        if len(suggestions) >= limit:
+            break
+
+    if suggestions:
+        return suggestions
+
+    return [
+        {
+            "article_number": "E-GERAET",
+            "description": "Elektrogerät / Spüle ergänzen",
+            "estimated_value": round(min(fill_value, appliance_value), 2),
+            "block_number": block_number,
+            "price_group": price_group,
+            "label": "Empfehlung: Elektrogerät ergänzen",
+            "action": f"Noch ein Elektrogerät bis ca. {format_money(fill_value)} ergänzen.",
+        }
+    ]
+
+
 def suggestion_value(rule: dict) -> float:
     gross_price = rule.get("gross_price") or 0.0
     block_price = rule.get("block_price") or 0.0
@@ -1454,6 +1491,9 @@ def suggestion_value(rule: dict) -> float:
 def rule_description(rule: dict) -> str:
     excerpt = rule.get("source_excerpt") or ""
     parts = [part.strip() for part in excerpt.split("|")]
+    for part in parts[2:]:
+        if part and (any(char.islower() for char in part) or " " in part) and not looks_like_article_number(part.replace(" ", "")):
+            return part
     if len(parts) >= 3:
         return parts[2]
     return rule.get("article_number") or "Ergänzungsposition"
