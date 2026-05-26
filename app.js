@@ -53,11 +53,21 @@ let selectedDocumentType = "Bestellung";
 
 const contentShell = document.querySelector(".content-shell");
 
+function setAgentPanel(target = "comparison") {
+  agentPanels.forEach((panel) => panel.classList.toggle("active", panel.dataset.agentPanel === target));
+  document.querySelectorAll("[data-agent-summary]").forEach((summary) => {
+    summary.hidden = summary.dataset.agentSummary !== target;
+  });
+}
+
 navItems.forEach((item) => {
   item.addEventListener("click", () => {
     navItems.forEach((entry) => entry.classList.remove("active"));
     item.classList.add("active");
     contentShell.dataset.view = item.dataset.view;
+    if (item.dataset.agentPanelTarget) {
+      setAgentPanel(item.dataset.agentPanelTarget);
+    }
   });
 });
 
@@ -65,9 +75,11 @@ agentTabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     const target = tab.dataset.agentTab;
     agentTabs.forEach((entry) => entry.classList.toggle("active", entry === tab));
-    agentPanels.forEach((panel) => panel.classList.toggle("active", panel.dataset.agentPanel === target));
+    setAgentPanel(target);
   });
 });
+
+setAgentPanel("comparison");
 
 refreshButton.addEventListener("click", async () => {
   await runAnalysis();

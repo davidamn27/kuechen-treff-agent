@@ -1318,6 +1318,9 @@ body .mail-dialog footer .outline-button {
 /* Hide KPIs for views that don't need them */
 .content-shell:not([data-view="overview"]):not([data-view="savings"]) .kpis { display: none; }
 
+/* overview: agent details are opened from the left navigation only */
+.content-shell[data-view="overview"] .agent-panel { display: none; }
+
 /* akte / settings: hide dashboard, show placeholder */
 .content-shell[data-view="akte"] .dashboard-grid,
 .content-shell[data-view="settings"] .dashboard-grid { display: none; }
@@ -1341,6 +1344,28 @@ body .mail-dialog footer .outline-button {
 .content-shell[data-view="docs"] .right-column,
 .content-shell[data-view="docs"] .article-panel,
 .content-shell[data-view="docs"] .note-panel { display: none; }
+
+/* agent views: show only the selected agent function */
+.content-shell[data-view="agent-comparison"] .dashboard-grid,
+.content-shell[data-view="agent-fill"] .dashboard-grid {
+  grid-template-columns: minmax(0, 760px);
+}
+
+.content-shell[data-view="agent-comparison"] .main-column,
+.content-shell[data-view="agent-comparison"] .action-panel,
+.content-shell[data-view="agent-comparison"] .mail-panel,
+.content-shell[data-view="agent-comparison"] .history-panel,
+.content-shell[data-view="agent-fill"] .main-column,
+.content-shell[data-view="agent-fill"] .action-panel,
+.content-shell[data-view="agent-fill"] .mail-panel,
+.content-shell[data-view="agent-fill"] .history-panel {
+  display: none;
+}
+
+.content-shell[data-view="agent-comparison"] .right-column,
+.content-shell[data-view="agent-fill"] .right-column {
+  width: 100%;
+}
 
 /* mail: mail panel full width, max 720px */
 .content-shell[data-view="mail"] .dashboard-grid { grid-template-columns: minmax(0, 720px); }

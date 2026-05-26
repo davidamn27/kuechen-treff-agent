@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Küchentreff Fritz Preis Agent</title>
-    <link rel="stylesheet" href="styles.css?v=20260526-1735" />
+    <link rel="stylesheet" href="styles.css?v=20260526-1810" />
   </head>
   <body>
     <aside class="sidebar" aria-label="Hauptnavigation">
@@ -30,6 +30,14 @@
         <button class="nav-item" type="button" data-view="savings" aria-label="Einsparungen">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 17 6-6 4 4 6-8"/><path d="M15 7h5v5"/></svg>
           <span>Einsparungen</span>
+        </button>
+        <button class="nav-item" type="button" data-view="agent-comparison" data-agent-panel-target="comparison" aria-label="AB-/Block-Abgleich">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h10M5 18h7"/><path d="m16 16 2 2 4-5"/></svg>
+          <span>AB-/Block-Abgleich</span>
+        </button>
+        <button class="nav-item" type="button" data-view="agent-fill" data-agent-panel-target="fill" aria-label="Füllwert-Optionen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v18H7z"/><path d="M10 8h4M10 12h4M10 16h2"/><path d="m16 14 2 2 3-4"/></svg>
+          <span>Füllwert-Optionen</span>
         </button>
         <button class="nav-item" type="button" data-view="docs" aria-label="Dokumente">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M8 12h8M8 16h6"/></svg>
@@ -266,22 +274,18 @@
           <aside class="right-column">
             <section class="panel agent-panel">
               <h2>Agenten-Auswertung</h2>
-              <div class="agent-tabs" role="tablist" aria-label="Agenten-Funktionen">
-                <button class="active" type="button" data-agent-tab="comparison">AB-/Block-Abgleich</button>
-                <button type="button" data-agent-tab="fill">Füllwert-Optionen</button>
-              </div>
               <div class="agent-grid">
-                <article>
+                <article class="agent-summary-card" data-agent-summary="comparison">
                   <span>AB-Abgleich</span>
                   <strong id="abComparisonStatus">Noch keine AB</strong>
                   <small id="abComparisonDetail">Bestellung kann bereits gegen die Blockdatenbank geprüft werden.</small>
                 </article>
-                <article>
+                <article class="agent-summary-card" data-agent-summary="fill">
                   <span>Füllwert</span>
                   <strong id="fillValueStatus">offen</strong>
                   <small id="fillValueDetail">AB hochladen, um den Block-Füllwert zu berechnen.</small>
                 </article>
-                <article class="agent-card-fill">
+                <article class="agent-summary-card agent-card-fill" data-agent-summary="fill">
                   <span>Füllwert-Option</span>
                   <strong id="fillOptionStatus">offen</strong>
                   <small id="fillOptionDetail">Passende Ergänzung wird nach der AB berechnet.</small>
@@ -401,6 +405,6 @@ bitte prüfen Sie die beigefügten Positionen zur Blockverrechnung und bestätig
       </section>
     </div>
 
-    <script src="app.js?v=20260526-1650"></script>
+    <script src="app.js?v=20260526-1810"></script>
   </body>
 </html>
