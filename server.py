@@ -1408,10 +1408,11 @@ def suggest_fill_items(block_rules: list[dict], fill_value: float, limit: int = 
             continue
         distance = abs(fill_value - estimated_value)
         if estimated_value <= fill_value * 1.15:
-            candidates.append((distance, -estimated_value, rule, estimated_value))
+            candidates.append((distance, -estimated_value, article_number, rule.get("block_number") or "", rule, estimated_value))
 
     suggestions = []
-    for _distance, _negative_value, rule, estimated_value in sorted(candidates)[:limit]:
+    ordered_candidates = sorted(candidates, key=lambda item: (item[0], item[1], item[2], item[3]))
+    for _distance, _negative_value, _article_number, _block_number, rule, estimated_value in ordered_candidates[:limit]:
         suggestions.append(
             {
                 "article_number": rule.get("article_number") or "",
