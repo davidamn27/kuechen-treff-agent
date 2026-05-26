@@ -163,9 +163,14 @@ fileList.addEventListener("click", async (event) => {
 });
 
 mailDraftButton.addEventListener("click", async () => {
-  const payload = await api(`/api/projects/${currentProjectId}/mail-regenerate`, { method: "POST" });
-  renderProject(payload);
   openMailDialog();
+  try {
+    const payload = await api(`/api/projects/${currentProjectId}/mail-regenerate`, { method: "POST" });
+    renderProject(payload);
+    openMailDialog();
+  } catch (error) {
+    window.alert(error.message);
+  }
 });
 
 sendMailButton.addEventListener("click", async () => {
@@ -200,13 +205,15 @@ dialogSendMail.addEventListener("click", async () => {
     return;
   }
 
+  const mailtoUrl = `mailto:${recipient}?cc=${encodeURIComponent(copy)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(fullBody)}`;
+  window.location.href = mailtoUrl;
+
   try {
     await api(`/api/projects/${currentProjectId}/mail-draft`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ recipient, subject, body }),
     });
-    window.location.href = `mailto:${recipient}?cc=${encodeURIComponent(copy)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(fullBody)}`;
     const payload = await api(`/api/projects/${currentProjectId}/mail-send`, { method: "POST" });
     closeMailDialog();
     renderProject(payload);
