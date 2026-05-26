@@ -1354,7 +1354,30 @@ def build_blockfinder_insight(ab_block_data: dict | None, block_rules: list[dict
     for candidate in candidates:
         candidate.pop("_score", None)
 
-    selected = candidates[0] if candidates else None
+    current = next((candidate for candidate in candidates if candidate["block_number"] == requested_block), None)
+    recommendation = recommend_block_change(ab_block_data, block_rules)
+    recommended_candidate = None
+    if recommendation:
+        recommended_number = recommendation["block_number"]
+        recommended_candidate = next((candidate for candidate in candidates if candidate["block_number"] == recommended_number), None)
+        if not recommended_candidate:
+            recommended_candidate = {
+                **recommendation,
+                "matched_articles": 0,
+                "actual_furniture_value": round(furniture_value, 2),
+                "actual_appliance_value": round(appliance_value, 2),
+                "fill_total": round((recommendation.get("fill_gross") or 0.0) + (recommendation.get("fill_net") or 0.0), 2),
+            }
+        if recommended_candidate:
+            candidates = [recommended_candidate] + [
+                candidate
+                for candidate in candidates
+                if candidate["block_number"] != recommended_number and candidate["block_number"] != requested_block
+            ]
+            if current:
+                candidates.append(current)
+
+    selected = recommended_candidate or (candidates[0] if candidates else current)
     return {
         "available": bool(candidates),
         "message": "Häcker-Blockfinder-Werte aus AB und Alliance/Häcker-Datenbank berechnet." if candidates else "Keine passende Preisgruppe in der Blockdatenbank gefunden.",
@@ -1362,6 +1385,8 @@ def build_blockfinder_insight(ab_block_data: dict | None, block_rules: list[dict
         "actual_furniture_value": round(furniture_value, 2),
         "actual_appliance_value": round(appliance_value, 2),
         "selected": selected,
+        "current": current,
+        "recommendation": recommended_candidate,
         "candidates": candidates[:limit],
     }
 
