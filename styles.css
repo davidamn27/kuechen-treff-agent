@@ -753,6 +753,38 @@ tfoot td:nth-child(2) {
   margin-bottom: 14px;
 }
 
+.agent-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.agent-tabs button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: #343946;
+  font-weight: 900;
+  min-height: 38px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.agent-tabs button.active {
+  border-color: var(--red);
+  background: var(--red);
+  color: #fff;
+}
+
+.agent-tab-panel {
+  display: none;
+}
+
+.agent-tab-panel.active {
+  display: block;
+}
+
 .agent-grid article,
 .agent-list article {
   border: 1px solid var(--line);

@@ -266,6 +266,10 @@
           <aside class="right-column">
             <section class="panel agent-panel">
               <h2>Agenten-Auswertung</h2>
+              <div class="agent-tabs" role="tablist" aria-label="Agenten-Funktionen">
+                <button class="active" type="button" data-agent-tab="comparison">AB-/Block-Abgleich</button>
+                <button type="button" data-agent-tab="fill">Füllwert-Optionen</button>
+              </div>
               <div class="agent-grid">
                 <article>
                   <span>AB-Abgleich</span>
@@ -278,7 +282,12 @@
                   <small id="fillValueDetail">AB hochladen, um den Block-Füllwert zu berechnen.</small>
                 </article>
               </div>
-              <div class="agent-list" id="agentSuggestions"></div>
+              <div class="agent-tab-panel active" data-agent-panel="comparison">
+                <div class="agent-list" id="agentComparisonList"></div>
+              </div>
+              <div class="agent-tab-panel" data-agent-panel="fill">
+                <div class="agent-list" id="agentFillList"></div>
+              </div>
             </section>
 
             <section class="panel action-panel">

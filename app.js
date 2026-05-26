@@ -29,7 +29,10 @@ const abComparisonStatus = document.querySelector("#abComparisonStatus");
 const abComparisonDetail = document.querySelector("#abComparisonDetail");
 const fillValueStatus = document.querySelector("#fillValueStatus");
 const fillValueDetail = document.querySelector("#fillValueDetail");
-const agentSuggestions = document.querySelector("#agentSuggestions");
+const agentComparisonList = document.querySelector("#agentComparisonList");
+const agentFillList = document.querySelector("#agentFillList");
+const agentTabs = document.querySelectorAll("[data-agent-tab]");
+const agentPanels = document.querySelectorAll("[data-agent-panel]");
 
 let currentProjectId = "PRJ-START";
 let selectedDocumentType = "Bestellung";
@@ -41,6 +44,14 @@ navItems.forEach((item) => {
     navItems.forEach((entry) => entry.classList.remove("active"));
     item.classList.add("active");
     contentShell.dataset.view = item.dataset.view;
+  });
+});
+
+agentTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    const target = tab.dataset.agentTab;
+    agentTabs.forEach((entry) => entry.classList.toggle("active", entry === tab));
+    agentPanels.forEach((panel) => panel.classList.toggle("active", panel.dataset.agentPanel === target));
   });
 });
 
@@ -297,7 +308,7 @@ function renderInsights(insights) {
         .filter((item) => item.block_number !== recommendation?.block_number && item.block_number !== currentBlock?.block_number)
         .slice(0, 2)
     : [];
-  agentSuggestions.innerHTML = [
+  agentComparisonList.innerHTML = [
     recommendation ? `
       <article class="agent-card-primary">
         <b>Blockwechsel-Empfehlung</b>
@@ -312,20 +323,6 @@ function renderInsights(insights) {
         <small>Möbel-Füllwert ${formatMoney(currentBlock.fill_gross)} · E-Geräte-Füllwert ${formatMoney(currentBlock.fill_net)}</small>
       </article>
     ` : "",
-    recommendation ? `
-      <article>
-        <b>Füllwert der Empfehlung</b>
-        <span>Möbel-Füllwert ${formatMoney(recommendation.fill_gross)} · E-Geräte-Füllwert ${formatMoney(recommendation.fill_net)}</span>
-        <small>Gesamt-Füllwert ${formatMoney(recommendation.fill_total || 0)} · Möbel ${formatMoney(recommendation.furniture_block_value)} / E-Geräte ${formatMoney(recommendation.appliance_block_value)}</small>
-      </article>
-    ` : "",
-    ...suggestionItems.map((item, index) => `
-      <article class="agent-card-fill">
-        <b>Füllwert-Option ${index + 1}</b>
-        <span>${escapeHtml(item.article_number)} · ${escapeHtml(item.description)}</span>
-        <small>${formatMoney(item.estimated_value)} · Block ${escapeHtml(item.block_number)} PG ${escapeHtml(item.price_group)}</small>
-      </article>
-    `),
     ...alternativeBlocks.map((item) => `
       <article>
         <b>Weitere Blockfinder-Alternative</b>
@@ -342,6 +339,30 @@ function renderInsights(insights) {
       </article>
     `),
   ].join("") || `<article><b>Keine offenen Agenten-Hinweise</b><span>Nach der AB werden Füllwert und Abweichungen automatisch ergänzt.</span></article>`;
+
+  agentFillList.innerHTML = [
+    fill.available ? `
+      <article class="agent-card-primary">
+        <b>Konkrete Füllwert-Empfehlung</b>
+        <span>${escapeHtml(fill.action || `Noch einen Artikel bis ca. ${formatMoney(fill.fill_value || 0)} ergänzen.`)}</span>
+        <small>Offener Füllwert ${formatMoney(fill.fill_value || 0)} · Grundlage Block ${escapeHtml(recommendation?.block_number || "")}</small>
+      </article>
+    ` : "",
+    recommendation ? `
+      <article>
+        <b>Füllwert aus empfohlenem Block</b>
+        <span>Möbel-Füllwert ${formatMoney(recommendation.fill_gross)} · E-Geräte-Füllwert ${formatMoney(recommendation.fill_net)}</span>
+        <small>Gesamt-Füllwert ${formatMoney(recommendation.fill_total || 0)} · Möbel ${formatMoney(recommendation.furniture_block_value)} / E-Geräte ${formatMoney(recommendation.appliance_block_value)}</small>
+      </article>
+    ` : "",
+    ...suggestionItems.map((item, index) => `
+      <article class="agent-card-fill">
+        <b>${escapeHtml(item.label || `Füllwert-Option ${index + 1}`)}</b>
+        <span>${escapeHtml(item.action || `${item.article_number} · ${item.description}`)}</span>
+        <small>${formatMoney(item.estimated_value)} · Block ${escapeHtml(item.block_number)} PG ${escapeHtml(item.price_group)}</small>
+      </article>
+    `),
+  ].join("") || `<article><b>Keine Füllwert-Optionen</b><span>Nach der AB berechnet der Agent passende Ergänzungen automatisch.</span></article>`;
 }
 
 function renderKpis(summary, status) {

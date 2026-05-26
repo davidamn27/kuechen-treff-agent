@@ -1271,13 +1271,15 @@ def build_fill_value_insight(ab_block_data: dict | None, block_rules: list[dict]
     actual_value = (ab_block_data.get("moebel_brutto") or 0.0) + (ab_block_data.get("eg_brutto") or 0.0)
     raw_fill_value = selected.get("fill_total") if selected else block_price - actual_value
     fill_value = round(max(0.0, raw_fill_value or 0.0), 2)
+    action = f"Noch ein Elektrogerät bis ca. {format_money(fill_value)} ergänzen." if fill_value > 0 else "Kein zusätzlicher Füllwert offen."
     return {
         "available": True,
         "message": "Füllwert offen." if fill_value > 0 else "Blockwert ist ausgeschöpft oder überschritten.",
         "block_price": round(block_price, 2),
         "actual_value": round(actual_value, 2),
         "fill_value": fill_value,
-        "suggestions": suggest_fill_items(block_rules, fill_value),
+        "action": action,
+        "suggestions": suggest_fill_items(block_rules, fill_value, selected),
     }
 
 
@@ -1391,9 +1393,23 @@ def build_blockfinder_insight(ab_block_data: dict | None, block_rules: list[dict
     }
 
 
-def suggest_fill_items(block_rules: list[dict], fill_value: float, limit: int = 2) -> list[dict]:
+def suggest_fill_items(block_rules: list[dict], fill_value: float, selected_block: dict | None = None, limit: int = 2) -> list[dict]:
     if fill_value <= 0:
         return []
+    suggestions = []
+    if selected_block and selected_block.get("appliance_block_value"):
+        appliance_value = selected_block.get("appliance_block_value") or fill_value
+        suggestions.append(
+            {
+                "article_number": "E-GERAET",
+                "description": "Elektrogerät / Spüle ergänzen",
+                "estimated_value": round(min(fill_value, appliance_value), 2),
+                "block_number": selected_block.get("block_number") or "",
+                "price_group": selected_block.get("price_group") or "",
+                "label": "Empfehlung: Elektrogerät ergänzen",
+                "action": f"Noch ein Elektrogerät bis ca. {format_money(fill_value)} ergänzen.",
+            }
+        )
     seen = set()
     candidates = []
     for rule in block_rules:
@@ -1410,9 +1426,10 @@ def suggest_fill_items(block_rules: list[dict], fill_value: float, limit: int = 
         if estimated_value <= fill_value * 1.15:
             candidates.append((distance, -estimated_value, article_number, rule.get("block_number") or "", rule, estimated_value))
 
-    suggestions = []
     ordered_candidates = sorted(candidates, key=lambda item: (item[0], item[1], item[2], item[3]))
     for _distance, _negative_value, _article_number, _block_number, rule, estimated_value in ordered_candidates[:limit]:
+        if len(suggestions) >= limit:
+            break
         suggestions.append(
             {
                 "article_number": rule.get("article_number") or "",
@@ -1420,6 +1437,7 @@ def suggest_fill_items(block_rules: list[dict], fill_value: float, limit: int = 
                 "estimated_value": round(estimated_value, 2),
                 "block_number": rule.get("block_number") or "",
                 "price_group": rule.get("price_group") or "",
+                "label": "Alternative Füllwert-Option",
             }
         )
     return suggestions
