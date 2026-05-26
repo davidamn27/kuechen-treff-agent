@@ -355,6 +355,47 @@ bitte prüfen Sie die beigefügten Positionen zur Blockverrechnung und bestätig
       </section>
     </main>
 
+    <div class="mail-dialog-backdrop" id="mailDialog" hidden>
+      <section class="mail-dialog" role="dialog" aria-modal="true" aria-labelledby="mailDialogTitle">
+        <header>
+          <h2 id="mailDialogTitle">Email an Häcker</h2>
+          <button type="button" class="icon-button" id="mailDialogClose" aria-label="Mailfenster schließen">
+            <svg viewBox="0 0 24 24"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg>
+          </button>
+        </header>
+        <label>
+          <span>Mail-Empfänger</span>
+          <input id="dialogMailRecipient" type="email" />
+        </label>
+        <label>
+          <span>Betreff</span>
+          <input id="dialogMailSubject" type="text" />
+        </label>
+        <label class="copy-row">
+          <span>Kopie an</span>
+          <input id="dialogMailCopy" type="checkbox" checked />
+          <input id="dialogMailCopyAddress" type="email" value="d.fritz@kuechentreff-fritz.de" />
+        </label>
+        <label class="mail-text-row">
+          <span>Email Text</span>
+          <textarea id="dialogMailBody"></textarea>
+        </label>
+        <div class="attachment-row">
+          <span>Anhang</span>
+          <label class="attachment-button">
+            Datei auswählen
+            <input id="dialogMailAttachment" type="file" hidden />
+          </label>
+          <small id="dialogAttachmentName">Keine ausgewählt</small>
+        </div>
+        <footer>
+          <button type="button" class="primary-button" id="dialogSendMail">Mail versenden</button>
+          <button type="button" class="outline-button" id="dialogCancelMail">Abbrechen</button>
+          <button type="button" class="outline-button" id="dialogPrintMail">Text drucken</button>
+        </footer>
+      </section>
+    </div>
+
     <script src="app.js?v=20260523-1225"></script>
   </body>
 </html>

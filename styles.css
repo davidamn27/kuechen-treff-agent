@@ -906,6 +906,100 @@ tfoot td:nth-child(2) {
   margin-top: 12px;
 }
 
+.mail-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(20, 24, 32, 0.28);
+}
+
+.mail-dialog-backdrop[hidden] {
+  display: none;
+}
+
+.mail-dialog {
+  width: min(720px, 100%);
+  border: 1px solid #9da4b1;
+  border-radius: 4px;
+  background: #f7f8fb;
+  box-shadow: 0 22px 70px rgba(20, 24, 32, 0.28);
+  padding: 16px 18px 18px;
+}
+
+.mail-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.mail-dialog h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #1d2430;
+}
+
+.mail-dialog label,
+.attachment-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 9px;
+  font-size: 13px;
+  color: #1d2430;
+}
+
+.mail-dialog input[type="text"],
+.mail-dialog input[type="email"],
+.mail-dialog textarea {
+  width: 100%;
+  border: 1px solid #8f96a3;
+  border-radius: 2px;
+  background: #fff;
+  padding: 8px 9px;
+  font: inherit;
+}
+
+.mail-dialog .copy-row {
+  grid-template-columns: 120px 20px 1fr;
+}
+
+.mail-dialog textarea {
+  min-height: 180px;
+  resize: vertical;
+}
+
+.mail-dialog .mail-text-row {
+  align-items: start;
+}
+
+.attachment-button {
+  display: inline-grid;
+  place-items: center;
+  width: max-content;
+  min-height: 28px;
+  border: 1px solid #8f96a3;
+  border-radius: 3px;
+  background: #fff;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.attachment-row small {
+  color: #5f6674;
+}
+
+.mail-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
 .timeline {
   list-style: none;
   padding: 0;

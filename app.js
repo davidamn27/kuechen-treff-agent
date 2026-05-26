@@ -33,6 +33,18 @@ const agentComparisonList = document.querySelector("#agentComparisonList");
 const agentFillList = document.querySelector("#agentFillList");
 const agentTabs = document.querySelectorAll("[data-agent-tab]");
 const agentPanels = document.querySelectorAll("[data-agent-panel]");
+const mailDialog = document.querySelector("#mailDialog");
+const mailDialogClose = document.querySelector("#mailDialogClose");
+const dialogMailRecipient = document.querySelector("#dialogMailRecipient");
+const dialogMailSubject = document.querySelector("#dialogMailSubject");
+const dialogMailCopy = document.querySelector("#dialogMailCopy");
+const dialogMailCopyAddress = document.querySelector("#dialogMailCopyAddress");
+const dialogMailBody = document.querySelector("#dialogMailBody");
+const dialogMailAttachment = document.querySelector("#dialogMailAttachment");
+const dialogAttachmentName = document.querySelector("#dialogAttachmentName");
+const dialogSendMail = document.querySelector("#dialogSendMail");
+const dialogCancelMail = document.querySelector("#dialogCancelMail");
+const dialogPrintMail = document.querySelector("#dialogPrintMail");
 
 let currentProjectId = "PRJ-START";
 let selectedDocumentType = "Bestellung";
@@ -151,26 +163,50 @@ fileList.addEventListener("click", async (event) => {
 mailDraftButton.addEventListener("click", async () => {
   const payload = await api(`/api/projects/${currentProjectId}/mail-regenerate`, { method: "POST" });
   renderProject(payload);
-  mailPanel.classList.add("editing");
-  toggleMail.textContent = "Entwurf speichern";
+  openMailDialog();
 });
 
 sendMailButton.addEventListener("click", async () => {
-  if (mailPanel.classList.contains("editing")) {
-    window.alert("Bitte den Mailentwurf zuerst speichern.");
-    return;
-  }
-  if (!window.confirm("Mail in Outlook öffnen und als gesendet markieren?")) {
-    return;
-  }
+  openMailDialog();
+});
 
-  const recipient = mailFields.querySelector("[data-mail-recipient]")?.value || "";
-  const subject = mailFields.querySelector("[data-mail-subject]")?.value || "";
-  const body = mailTextarea.value || "";
-  window.location.href = `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+mailDialogClose.addEventListener("click", closeMailDialog);
+dialogCancelMail.addEventListener("click", closeMailDialog);
+mailDialog.addEventListener("click", (event) => {
+  if (event.target === mailDialog) {
+    closeMailDialog();
+  }
+});
+
+dialogMailAttachment.addEventListener("change", () => {
+  dialogAttachmentName.textContent = dialogMailAttachment.files[0]?.name || "Keine ausgewählt";
+});
+
+dialogPrintMail.addEventListener("click", () => {
+  window.print();
+});
+
+dialogSendMail.addEventListener("click", async () => {
+  const recipient = dialogMailRecipient.value.trim();
+  const copy = dialogMailCopy.checked ? dialogMailCopyAddress.value.trim() : "";
+  const subject = dialogMailSubject.value.trim();
+  const body = dialogMailBody.value.trim();
+  const fullBody = copy ? `${body}\n\nKopie an: ${copy}` : body;
+
+  if (!recipient) {
+    window.alert("Bitte einen Mail-Empfänger eintragen.");
+    return;
+  }
 
   try {
+    await api(`/api/projects/${currentProjectId}/mail-draft`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recipient, subject, body }),
+    });
+    window.location.href = `mailto:${recipient}?cc=${encodeURIComponent(copy)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(fullBody)}`;
     const payload = await api(`/api/projects/${currentProjectId}/mail-send`, { method: "POST" });
+    closeMailDialog();
     renderProject(payload);
   } catch (error) {
     window.alert(error.message);
@@ -235,6 +271,19 @@ toggleMail.addEventListener("click", async () => {
     renderProject(payload);
   }
 });
+
+function openMailDialog() {
+  dialogMailRecipient.value = mailFields.querySelector("[data-mail-recipient]")?.value || "";
+  dialogMailSubject.value = mailFields.querySelector("[data-mail-subject]")?.value || "";
+  dialogMailBody.value = mailTextarea.value || "";
+  dialogAttachmentName.textContent = dialogMailAttachment.files[0]?.name || "Keine ausgewählt";
+  mailDialog.hidden = false;
+  dialogMailBody.focus();
+}
+
+function closeMailDialog() {
+  mailDialog.hidden = true;
+}
 
 loadProject();
 
@@ -479,6 +528,11 @@ function renderMail(draft) {
   `;
   mailTextarea.value = draft.body;
   sendMailButton.textContent = draft.status === "Gesendet" ? "Erneut freigeben" : "Mail senden";
+  if (!mailDialog.hidden) {
+    dialogMailRecipient.value = draft.recipient || "";
+    dialogMailSubject.value = draft.subject || "";
+    dialogMailBody.value = draft.body || "";
+  }
 }
 
 function iconClass(category) {
