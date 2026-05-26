@@ -1375,8 +1375,9 @@ body .mail-dialog footer .outline-button {
 /* Hide KPIs for views that don't need them */
 .content-shell:not([data-view="overview"]):not([data-view="savings"]) .kpis { display: none; }
 
-/* overview: agent details are opened from the left navigation only */
-.content-shell[data-view="overview"] .agent-panel { display: none; }
+/* overview: keep the main workspace wide; side panels are opened from navigation */
+.content-shell[data-view="overview"] .dashboard-grid { grid-template-columns: 1fr; }
+.content-shell[data-view="overview"] .right-column { display: none; }
 
 /* akte / settings: hide dashboard, show placeholder */
 .content-shell[data-view="akte"] .dashboard-grid,
