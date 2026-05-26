@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Küchentreff Fritz Preis Agent</title>
-    <link rel="stylesheet" href="styles.css?v=20260526-1810" />
+    <link rel="stylesheet" href="styles.css?v=20260526-1825" />
   </head>
   <body>
     <aside class="sidebar" aria-label="Hauptnavigation">
@@ -56,6 +56,30 @@
           <span>Einstellungen</span>
         </button>
       </nav>
+
+      <div class="sidebar-actions" aria-label="Aktionen">
+        <span>Aktionen</span>
+        <button type="button" id="recalculateButton">
+          <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7L20 8"/><path d="M20 4v4h-4"/></svg>
+          Einsparungen neu berechnen
+        </button>
+        <button type="button" id="matchButton">
+          <svg viewBox="0 0 24 24"><path d="M8 7h8M8 12h8M8 17h5"/><path d="m16 15 2 2 3-4"/></svg>
+          Artikelabgleich starten
+        </button>
+        <button type="button" id="replaceDocsButton">
+          <svg viewBox="0 0 24 24"><path d="M6 7h12M9 7V5h6v2M8 10v9h8v-9"/><path d="M10 13h4"/></svg>
+          Bestellung/AB ersetzen
+        </button>
+        <button type="button" id="mailDraftButton">
+          <svg viewBox="0 0 24 24"><path d="M4 6h16v12H4z"/><path d="m4 7 8 6 8-6"/></svg>
+          Mail an Lieferant erstellen
+        </button>
+        <button type="button" id="archiveButton">
+          <svg viewBox="0 0 24 24"><path d="M5 8h14v12H5z"/><path d="M8 8V5h8v3"/></svg>
+          Projekt archivieren
+        </button>
+      </div>
 
       <div class="sidebar-footer">
         <button class="new-project" type="button">
@@ -299,15 +323,6 @@
               </div>
             </section>
 
-            <section class="panel action-panel">
-              <h2>Aktionen</h2>
-              <button type="button" id="recalculateButton"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7L20 8"/><path d="M20 4v4h-4"/></svg>Einsparungen neu berechnen</button>
-              <button type="button" id="matchButton"><svg viewBox="0 0 24 24"><path d="M8 7h8M8 12h8M8 17h5"/><path d="m16 15 2 2 3-4"/></svg>Artikelabgleich starten</button>
-              <button type="button" id="replaceDocsButton"><svg viewBox="0 0 24 24"><path d="M6 7h12M9 7V5h6v2M8 10v9h8v-9"/><path d="M10 13h4"/></svg>Bestellung/AB ersetzen</button>
-              <button type="button" id="mailDraftButton"><svg viewBox="0 0 24 24"><path d="M4 6h16v12H4z"/><path d="m4 7 8 6 8-6"/></svg>Mail an Lieferant erstellen</button>
-              <button type="button" id="archiveButton"><svg viewBox="0 0 24 24"><path d="M5 8h14v12H5z"/><path d="M8 8V5h8v3"/></svg>Projekt archivieren</button>
-            </section>
-
             <section class="panel mail-panel">
               <h2>Mail an Lieferant (Entwurf)</h2>
               <dl>
@@ -405,6 +420,6 @@ bitte prüfen Sie die beigefügten Positionen zur Blockverrechnung und bestätig
       </section>
     </div>
 
-    <script src="app.js?v=20260526-1810"></script>
+    <script src="app.js?v=20260526-1825"></script>
   </body>
 </html>
