@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Küchentreff Fritz Preis Agent</title>
-    <link rel="stylesheet" href="styles.css?v=20260526-1850" />
+    <link rel="stylesheet" href="styles.css?v=20260526-1900" />
   </head>
   <body>
     <aside class="sidebar" aria-label="Hauptnavigation">
@@ -12,6 +12,12 @@
         <span>Küchentreff</span>
         <strong>Fritz</strong>
         <span>Küchenstudio</span>
+      </div>
+
+      <div class="project-switcher-wrap">
+        <select class="project-select" id="projectSelect" aria-label="Projekt auswählen">
+          <option value="">Projekt laden…</option>
+        </select>
       </div>
 
       <nav class="main-nav">
@@ -103,17 +109,12 @@
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13 7 4 4"/></svg>
             </button>
           </div>
-          <p>Projekt-ID: PRJ-2026-00125 <span></span> Erstellt am: 21.05.2026 <span></span> Erstellt von: Max Mustermann</p>
+          <p>Projekt-ID: PRJ-2026-00125</p>
         </div>
         <div class="top-actions">
-          <button class="notification" type="button" aria-label="Benachrichtigungen">
+          <button class="notification" type="button" aria-label="Benachrichtigungen" id="notificationButton">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 7 3 6 3 9H3c0-3 3-2 3-9z"/><path d="M10 21h4"/></svg>
-            <b>3</b>
-          </button>
-          <button class="user-menu" type="button">
-            <span class="avatar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span>
-            Max Mustermann
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            <b id="notificationBadge">0</b>
           </button>
         </div>
       </header>
@@ -152,6 +153,7 @@
               <div class="panel-header">
                 <h2>Artikelübersicht</h2>
                 <div class="button-row">
+                  <input type="text" id="articleSearch" class="search-input" placeholder="Artikel suchen…" autocomplete="off" />
                   <button class="ghost-button" type="button" id="exportButton">
                     <svg viewBox="0 0 24 24"><path d="M6 3h12v18H6z"/><path d="M9 15h6M12 7v8M9 12l3 3 3-3"/></svg>
                     Excel Export
@@ -277,6 +279,19 @@
                     <button type="button" aria-label="Dateioptionen">•••</button>
                   </article>
                 </div>
+              </div>
+            </section>
+
+            <section class="panel block-library-panel">
+              <h2>Blockdatenbank</h2>
+              <div class="block-library-upload">
+                <p class="block-library-hint">Laden Sie eine neue Blockdatenbank hoch (CSV oder XLSX), um die zentralen Blockregeln zu aktualisieren.</p>
+                <label class="block-library-label">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6v18h12V7z"/><path d="M14 3v5h5M12 17V9M9 12l3-3 3 3"/></svg>
+                  Blockdatenbank aktualisieren
+                  <input type="file" id="blockLibraryInput" accept=".csv,.xlsx" hidden />
+                </label>
+                <p class="upload-status" id="blockLibraryStatus" aria-live="polite"></p>
               </div>
             </section>
 
@@ -420,6 +435,6 @@ bitte prüfen Sie die beigefügten Positionen zur Blockverrechnung und bestätig
       </section>
     </div>
 
-    <script src="app.js?v=20260526-1850"></script>
+    <script src="app.js?v=20260526-1900"></script>
   </body>
 </html>

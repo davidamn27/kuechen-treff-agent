@@ -1904,7 +1904,43 @@ def save_upload(project_id: str, parts: list[dict]) -> list[dict]:
             if not part["filename"]:
                 continue
             original_name = safe_filename(part["filename"])
-            if document_type == "Blockunterlage" or guess_server_document_type(original_name) == "Blockunterlage":
+            if document_type == "Blockunterlage":
+                # Import into the global block library instead of project
+                project_dir.mkdir(parents=True, exist_ok=True)
+                stored_name = f"{uuid4()}_{original_name}"
+                path = project_dir / stored_name
+                path.write_bytes(part["data"])
+                try:
+                    rows, text = parse_document(path, original_name)
+                    document_id = str(uuid4())
+                    stamp = now_iso()
+                    old_documents = [
+                        row_to_dict(row)
+                        for row in connection.execute(
+                            "SELECT id FROM documents WHERE project_id = ? AND filename = ?",
+                            (GLOBAL_BLOCK_PROJECT_ID, original_name),
+                        )
+                    ]
+                    for old_doc in old_documents:
+                        connection.execute("DELETE FROM block_rules WHERE document_id = ?", (old_doc["id"],))
+                        connection.execute("DELETE FROM extracted_positions WHERE document_id = ?", (old_doc["id"],))
+                        connection.execute("DELETE FROM documents WHERE id = ?", (old_doc["id"],))
+                    connection.execute(
+                        """
+                        INSERT INTO documents (
+                          id, project_id, filename, stored_path, document_type,
+                          content_type, size, uploaded_at, extracted_text, analysis_status
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (document_id, GLOBAL_BLOCK_PROJECT_ID, original_name, str(path.relative_to(ROOT)), "Blockunterlage", part["content_type"], len(part["data"]), stamp, text[:100000], "analysiert"),
+                    )
+                    _position_count, rule_count = persist_extraction(connection, GLOBAL_BLOCK_PROJECT_ID, document_id, "Blockunterlage", original_name, rows, text)
+                    add_timeline(connection, "Blockdatenbank aktualisiert", f"{original_name}: {rule_count} Blockregeln importiert.", original_name, stamp, project_id)
+                    saved.append({"id": document_id, "filename": original_name, "document_type": "Blockunterlage", "content_type": part["content_type"], "size": len(part["data"]), "uploaded_at": stamp})
+                except Exception as exc:
+                    add_timeline(connection, "Blockimport fehlgeschlagen", f"{original_name}: {exc}", original_name, project_id=project_id)
+                continue
+            if guess_server_document_type(original_name) == "Blockunterlage":
                 raise ValueError("Vereinbarungen sind bereits als zentrale Blockdatenbank hinterlegt. Bitte nur Bestellung oder AB hochladen.")
             stored_name = f"{uuid4()}_{original_name}"
             path = project_dir / stored_name
@@ -2270,6 +2306,22 @@ class AgentHandler(SimpleHTTPRequestHandler):
             self.send_json(project_payload())
             return
 
+        if path == "/api/projects":
+            with db() as connection:
+                rows = [
+                    row_to_dict(row)
+                    for row in connection.execute(
+                        "SELECT id, name, commission, customer, owner, status, updated_at FROM projects ORDER BY updated_at DESC"
+                    )
+                ]
+            self.send_json(rows)
+            return
+
+        match = re.fullmatch(r"/api/projects/([^/]+)", path)
+        if match and match.group(1) not in ("current",):
+            self.send_json(project_payload(match.group(1)))
+            return
+
         match = re.fullmatch(r"/api/projects/([^/]+)/export", path)
         if match:
             export_path = export_csv(match.group(1))
@@ -2357,6 +2409,42 @@ class AgentHandler(SimpleHTTPRequestHandler):
             match = re.fullmatch(r"/api/projects/([^/]+)/documents/([^/]+)/delete", path)
             if match:
                 self.send_json(delete_document(match.group(1), match.group(2)))
+                return
+
+            match = re.fullmatch(r"/api/projects/([^/]+)/articles/([^/]+)/price", path)
+            if match:
+                project_id = match.group(1)
+                article_id = match.group(2)
+                payload = json.loads(body.decode("utf-8") or "{}")
+                new_price = float(payload.get("price") or 0)
+                if new_price <= 0:
+                    raise ValueError("Preis muss größer als 0 sein.")
+                with db() as connection:
+                    article = connection.execute(
+                        "SELECT * FROM articles WHERE id = ? AND project_id = ?",
+                        (article_id, project_id),
+                    ).fetchone()
+                    if not article:
+                        raise ValueError("Artikel nicht gefunden.")
+                    # Derive block_price proportionally from ab_block_data ratio if available
+                    ab_block_data = get_ab_block_data(connection, project_id)
+                    if ab_block_data and ab_block_data.get("bc_price") and ab_block_data.get("moebel_eg_brutto"):
+                        ratio = ab_block_data["bc_price"] / ab_block_data["moebel_eg_brutto"]
+                        new_block_price = round(new_price * ratio, 2)
+                    else:
+                        new_block_price = new_price
+                    connection.execute(
+                        "UPDATE articles SET single_price = ?, block_price = ? WHERE id = ? AND project_id = ?",
+                        (new_price, new_block_price, article_id, project_id),
+                    )
+                    connection.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (now_iso(), project_id))
+                    add_timeline(
+                        connection,
+                        "Preis manuell gesetzt",
+                        f"Einzelpreis für Artikel {row_to_dict(article)['article_number']} auf {format_money(new_price)} gesetzt.",
+                        project_id=project_id,
+                    )
+                self.send_json(project_payload(project_id))
                 return
 
             self.send_error(HTTPStatus.NOT_FOUND)

@@ -47,11 +47,50 @@ const dialogAttachmentName = document.querySelector("#dialogAttachmentName");
 const dialogSendMail = document.querySelector("#dialogSendMail");
 const dialogCancelMail = document.querySelector("#dialogCancelMail");
 const dialogPrintMail = document.querySelector("#dialogPrintMail");
+const projectSelect = document.querySelector("#projectSelect");
+const articleSearch = document.querySelector("#articleSearch");
+const notificationBadge = document.querySelector("#notificationBadge");
+const userDisplayName = document.querySelector("#userDisplayName");
+const blockLibraryInput = document.querySelector("#blockLibraryInput");
+const blockLibraryStatus = document.querySelector("#blockLibraryStatus");
 
 let currentProjectId = "PRJ-START";
 let selectedDocumentType = "Bestellung";
+let lastArticles = [];
 
 const contentShell = document.querySelector(".content-shell");
+
+// ─── Status badge helper ──────────────────────────────────────────────────────
+
+function statusBadgeKey(status) {
+  if (!status) return "ok";
+  const s = status.toLowerCase();
+  if (s.includes("fehlt in ab")) return "missing";
+  if (s.includes("zusätzlich in ab")) return "extra";
+  if (s.includes("einsparung")) return "saving";
+  if (s.includes("geprüft") || s.includes("geprueft")) return "ok";
+  if (s.includes("rückfrage") || s.includes("rueckfrage") || s.includes("nicht verrechenbar")) return "warn";
+  return "ok";
+}
+
+// ─── Toast notifications ──────────────────────────────────────────────────────
+
+function showToast(message) {
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  // Trigger fade-in
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => toast.classList.add("toast-visible"));
+  });
+  setTimeout(() => {
+    toast.classList.remove("toast-visible");
+    toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+  }, 3000);
+}
+
+// ─── Navigation ───────────────────────────────────────────────────────────────
 
 function setAgentPanel(target = "comparison") {
   agentPanels.forEach((panel) => panel.classList.toggle("active", panel.dataset.agentPanel === target));
@@ -81,6 +120,8 @@ agentTabs.forEach((tab) => {
 
 setAgentPanel("comparison");
 
+// ─── Buttons ──────────────────────────────────────────────────────────────────
+
 refreshButton.addEventListener("click", async () => {
   await runAnalysis();
 });
@@ -101,6 +142,8 @@ typeChips.forEach((chip) => {
 exportButton.addEventListener("click", () => {
   window.location.href = `/api/projects/${currentProjectId}/export`;
 });
+
+// ─── File uploads ─────────────────────────────────────────────────────────────
 
 fileInput.addEventListener("change", async () => {
   await uploadFiles(fileInput.files);
@@ -153,11 +196,42 @@ async function uploadFiles(files) {
     const payload = await response.json();
     renderProject(payload.project);
     uploadStatus.textContent = "Upload abgeschlossen.";
+    showToast("Datei(en) erfolgreich hochgeladen.");
   } catch (error) {
     uploadStatus.textContent = error.message;
     uploadStatus.classList.add("error");
   }
 }
+
+// ─── Block library upload ─────────────────────────────────────────────────────
+
+if (blockLibraryInput) {
+  blockLibraryInput.addEventListener("change", async () => {
+    if (!blockLibraryInput.files.length) return;
+    const form = new FormData();
+    form.append("document_type", "Blockunterlage");
+    [...blockLibraryInput.files].forEach((file) => form.append("files", file));
+    blockLibraryStatus.textContent = "Blockdatenbank wird hochgeladen…";
+    blockLibraryStatus.classList.remove("error");
+    try {
+      const response = await fetch(`/api/projects/${currentProjectId}/documents`, {
+        method: "POST",
+        body: form,
+      });
+      if (!response.ok) throw new Error("Upload fehlgeschlagen");
+      const payload = await response.json();
+      renderProject(payload.project);
+      blockLibraryStatus.textContent = "Blockdatenbank erfolgreich aktualisiert.";
+      showToast("Blockdatenbank wurde aktualisiert.");
+    } catch (error) {
+      blockLibraryStatus.textContent = error.message;
+      blockLibraryStatus.classList.add("error");
+    }
+    blockLibraryInput.value = "";
+  });
+}
+
+// ─── Document deletion ────────────────────────────────────────────────────────
 
 fileList.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-delete-document]");
@@ -173,6 +247,8 @@ fileList.addEventListener("click", async (event) => {
   });
   renderProject(payload);
 });
+
+// ─── Mail ─────────────────────────────────────────────────────────────────────
 
 mailDraftButton.addEventListener("click", async () => {
   openMailDialog();
@@ -229,6 +305,7 @@ dialogSendMail.addEventListener("click", async () => {
     const payload = await api(`/api/projects/${currentProjectId}/mail-send`, { method: "POST" });
     closeMailDialog();
     renderProject(payload);
+    showToast("Mail wurde freigegeben und in der Outbox abgelegt.");
   } catch (error) {
     window.alert(error.message);
   }
@@ -240,6 +317,7 @@ archiveButton.addEventListener("click", async () => {
   }
   const payload = await api(`/api/projects/${currentProjectId}/archive`, { method: "POST" });
   renderProject(payload);
+  showToast("Projekt wurde archiviert.");
 });
 
 replaceDocsButton.addEventListener("click", async () => {
@@ -271,6 +349,8 @@ newProjectButton.addEventListener("click", async () => {
     }),
   });
   renderProject(payload);
+  await loadProjectList();
+  showToast(`Projekt "${name}" wurde angelegt.`);
 });
 
 toggleMail.addEventListener("click", async () => {
@@ -293,6 +373,90 @@ toggleMail.addEventListener("click", async () => {
   }
 });
 
+// ─── Article search / filter ──────────────────────────────────────────────────
+
+if (articleSearch) {
+  articleSearch.addEventListener("input", () => {
+    filterArticleRows(articleSearch.value.trim().toLowerCase());
+  });
+}
+
+function filterArticleRows(query) {
+  const rows = tableBody.querySelectorAll("tr");
+  // Rows come in pairs: main row + detail row
+  for (let i = 0; i < rows.length; i += 2) {
+    const mainRow = rows[i];
+    const detailRow = rows[i + 1];
+    if (!mainRow) continue;
+    if (!query) {
+      mainRow.hidden = false;
+      if (detailRow) detailRow.hidden = false;
+      continue;
+    }
+    const cells = mainRow.querySelectorAll("td");
+    // Check article number (cell 1) and description (cell 2)
+    const articleNum = cells[1]?.textContent.toLowerCase() || "";
+    const description = cells[2]?.textContent.toLowerCase() || "";
+    const matches = articleNum.includes(query) || description.includes(query);
+    mainRow.hidden = !matches;
+    if (detailRow) detailRow.hidden = !matches;
+  }
+}
+
+// ─── Inline price editing ─────────────────────────────────────────────────────
+
+tableBody.addEventListener("change", async (event) => {
+  const input = event.target.closest(".price-input");
+  if (!input) return;
+  const articleId = input.dataset.articleId;
+  const price = parseFloat(input.value);
+  if (!articleId || isNaN(price) || price <= 0) {
+    showToast("Bitte einen gültigen Preis eingeben.");
+    return;
+  }
+  try {
+    const payload = await api(`/api/projects/${currentProjectId}/articles/${articleId}/price`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ price }),
+    });
+    renderProject(payload);
+    showToast("Preis wurde gespeichert.");
+  } catch (error) {
+    showToast(`Fehler beim Speichern: ${error.message}`);
+  }
+});
+
+// ─── Project switcher ─────────────────────────────────────────────────────────
+
+if (projectSelect) {
+  projectSelect.addEventListener("change", async () => {
+    const selectedId = projectSelect.value;
+    if (selectedId && selectedId !== currentProjectId) {
+      currentProjectId = selectedId;
+      const payload = await api(`/api/projects/${selectedId}`);
+      renderProject(payload);
+    }
+  });
+}
+
+async function loadProjectList() {
+  try {
+    const projects = await api("/api/projects");
+    if (!projectSelect) return;
+    projectSelect.innerHTML = projects
+      .map(
+        (project) =>
+          `<option value="${escapeHtml(project.id)}" ${project.id === currentProjectId ? "selected" : ""}>${escapeHtml(project.name)}${project.commission ? ` · ${escapeHtml(project.commission)}` : ""}</option>`
+      )
+      .join("");
+  } catch {
+    // Silently ignore — project list is optional
+  }
+}
+
+// ─── Mail dialog helpers ──────────────────────────────────────────────────────
+
 function openMailDialog() {
   dialogMailRecipient.value = mailFields.querySelector("[data-mail-recipient]")?.value || "";
   dialogMailSubject.value = mailFields.querySelector("[data-mail-subject]")?.value || "";
@@ -306,6 +470,8 @@ function closeMailDialog() {
   mailDialog.hidden = true;
 }
 
+// ─── Load on startup ──────────────────────────────────────────────────────────
+
 loadProject();
 
 async function runAnalysis() {
@@ -315,9 +481,11 @@ async function runAnalysis() {
   renderProject(payload);
 }
 
-async function loadProject() {
-  const payload = await api("/api/projects/current");
+async function loadProject(projectId) {
+  const url = projectId ? `/api/projects/${projectId}` : "/api/projects/current";
+  const payload = await api(url);
   renderProject(payload);
+  await loadProjectList();
 }
 
 async function api(url, options = {}) {
@@ -335,12 +503,17 @@ async function api(url, options = {}) {
   return response.json();
 }
 
+// ─── Render ───────────────────────────────────────────────────────────────────
+
 function renderProject(payload) {
   const { project, summary, articles, documents, timeline: entries, mailDraft, insights } = payload;
   currentProjectId = project.id;
 
   projectTitle.textContent = `Projekt: ${project.name}`;
-  projectMeta.innerHTML = `Projekt-ID: ${project.id} <span></span> Erstellt am: ${formatDate(project.created_at)} <span></span> Erstellt von: ${project.owner}`;
+  projectMeta.textContent = `Projekt-ID: ${project.id}`;
+
+  // Update dynamic topbar
+  if (userDisplayName) userDisplayName.textContent = project.owner || "Max Mustermann";
 
   renderKpis(summary, project.status);
   renderArticles(articles, summary);
@@ -459,6 +632,7 @@ function renderProductData(productData = []) {
 }
 
 function renderKpis(summary, status) {
+  // 3 cards: position_count, total_net, status
   const values = [
     [summary.position_count, "mit Einsparungspotenzial"],
     [formatMoney(summary.total_net), "nach Abzug der Einsparungen"],
@@ -466,15 +640,43 @@ function renderKpis(summary, status) {
   ];
 
   kpiCards.forEach((card, index) => {
+    if (!values[index]) return;
     card.querySelector("strong").textContent = values[index][0];
     card.querySelector("small").textContent = values[index][1];
   });
+
+  // Update notification badge: number of articles needing attention
+  const alertCount = (summary.questions || 0);
+  if (notificationBadge) {
+    notificationBadge.textContent = alertCount;
+    notificationBadge.style.display = alertCount > 0 ? "" : "none";
+  }
 }
 
 function renderArticles(articles, summary) {
+  lastArticles = articles;
+
+  if (!articles.length) {
+    tableBody.innerHTML = '<tr><td colspan="9" class="empty-state">Noch keine Artikel analysiert. Bitte Bestellung und AB hochladen und "Einsparungen neu berechnen" klicken.</td></tr>';
+    tableFoot.innerHTML = `
+      <tr>
+        <td colspan="4">0 Positionen</td>
+        <td colspan="4">Auswertung</td>
+        <td class="total">${formatMoney(0)}</td>
+      </tr>
+    `;
+    return;
+  }
+
   tableBody.innerHTML = articles
     .map((article) => {
       const saving = (article.single_price - article.block_price) * article.quantity;
+      const badgeKey = statusBadgeKey(article.status);
+      const isMissingWithNoPrice = article.status === "fehlt in AB" && (article.single_price === 0 || article.single_price === null);
+      const einzelpreisCell = isMissingWithNoPrice
+        ? `<input type="number" class="price-input" data-article-id="${escapeHtml(article.id)}" value="" placeholder="Preis" min="0" step="0.01" />`
+        : formatMoney(article.single_price);
+
       return `
         <tr>
           <td><span class="item-icon ${iconClass(article.category)}"></span></td>
@@ -483,14 +685,14 @@ function renderArticles(articles, summary) {
           <td>${escapeHtml(article.category)}</td>
           <td>${article.quantity}</td>
           <td>${formatDimensions(article)}</td>
-          <td>${formatMoney(article.single_price)}</td>
+          <td>${einzelpreisCell}</td>
           <td>${formatMoney(article.block_price)}</td>
           <td class="${saving > 0 ? "saving" : ""}">${formatMoney(saving)}</td>
         </tr>
         <tr class="detail-row">
           <td></td>
           <td colspan="8">
-            Status: <strong>${escapeHtml(article.status)}</strong>
+            Status: <strong><span class="status-badge status-${badgeKey}">${escapeHtml(article.status)}</span></strong>
             ${article.block_number ? ` · Block: ${escapeHtml(article.block_number)}` : ""}
             ${article.price_group ? ` · Preisgruppe: ${escapeHtml(article.price_group)}` : ""}
             ${article.dimension_status && article.dimension_status !== "offen" ? ` · Maße: ${escapeHtml(article.dimension_status)}` : ""}
@@ -508,6 +710,11 @@ function renderArticles(articles, summary) {
       <td class="total">${formatMoney(summary.estimated_savings)}</td>
     </tr>
   `;
+
+  // Re-apply any active search filter
+  if (articleSearch && articleSearch.value.trim()) {
+    filterArticleRows(articleSearch.value.trim().toLowerCase());
+  }
 }
 
 function formatDimensions(article) {
@@ -544,6 +751,10 @@ function renderDocuments(documents) {
 }
 
 function renderTimeline(entries) {
+  if (!entries || !entries.length) {
+    timeline.innerHTML = '<li class="timeline-empty">Noch keine Einträge vorhanden.</li>';
+    return;
+  }
   timeline.innerHTML = entries
     .map(
       (entry) => `
@@ -578,6 +789,8 @@ function renderMail(draft) {
     dialogMailBody.value = draft.body || "";
   }
 }
+
+// ─── Utility functions ────────────────────────────────────────────────────────
 
 function iconClass(category) {
   const value = category.toLowerCase();

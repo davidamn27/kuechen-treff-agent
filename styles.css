@@ -86,7 +86,6 @@ svg {
 
 .main-nav {
   padding: 0 14px;
-  transform: translateY(-12px);
 }
 
 .nav-item {
@@ -118,7 +117,7 @@ svg {
 .nav-item.active {
   color: #fff;
   background: linear-gradient(135deg, #b8001a, #d70019);
-  box-shadow: 0 12px 26px rgba(184, 0, 26, 0.25);
+  box-shadow: 0 4px 12px rgba(184, 0, 26, 0.18);
 }
 
 .sidebar-actions {
@@ -305,7 +304,7 @@ h1 {
 
 .kpis {
   display: grid;
-  grid-template-columns: repeat(3, minmax(190px, 1fr));
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
   gap: 20px;
   margin-bottom: 22px;
 }
@@ -1310,7 +1309,7 @@ body .mail-dialog footer .outline-button {
   }
 
   .kpis {
-    grid-template-columns: repeat(2, minmax(220px, 1fr));
+    grid-template-columns: repeat(2, minmax(200px, 1fr));
   }
 }
 
@@ -1429,6 +1428,203 @@ body .mail-dialog footer .outline-button {
   .user-menu {
     font-size: 12px;
   }
+}
+
+/* ─── Status Badges ──────────────────────────────── */
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.status-badge.status-missing {
+  background: #fff3e0;
+  color: #e65100;
+  border: 1px solid #ffcc80;
+}
+
+.status-badge.status-extra {
+  background: #e3f2fd;
+  color: #1565c0;
+  border: 1px solid #90caf9;
+}
+
+.status-badge.status-saving {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
+}
+
+.status-badge.status-ok {
+  background: #f5f5f5;
+  color: #424242;
+  border: 1px solid #e0e0e0;
+}
+
+.status-badge.status-warn {
+  background: #ffebee;
+  color: #c62828;
+  border: 1px solid #ef9a9a;
+}
+
+/* ─── KPI Highlight ──────────────────────────────── */
+
+
+/* ─── Empty State ────────────────────────────────── */
+
+.empty-state {
+  text-align: center;
+  color: var(--muted);
+  padding: 38px 20px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.timeline-empty {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 8px 0 8px 26px;
+  list-style: none;
+}
+
+/* ─── Search Input ───────────────────────────────── */
+
+.search-input {
+  min-height: 40px;
+  border: 1px solid #d9d9d9;
+  border-radius: 5px;
+  padding: 0 12px;
+  font-size: 13px;
+  color: #1d232f;
+  background: #fff;
+  min-width: 160px;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+/* ─── Inline Price Input ─────────────────────────── */
+
+.price-input {
+  width: 100px;
+  min-height: 32px;
+  border: 1px solid #ffcc80;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: #1d232f;
+  background: #fff8f0;
+}
+
+.price-input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+/* ─── Project Switcher ───────────────────────────── */
+
+.project-switcher-wrap {
+  padding: 10px 14px 4px;
+}
+
+.project-select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1d232f;
+  background: #fff;
+  cursor: pointer;
+  appearance: auto;
+}
+
+.project-select:focus {
+  outline: none;
+  border-color: var(--red);
+}
+
+/* ─── Block Library Upload ───────────────────────── */
+
+.block-library-panel h2 {
+  margin-bottom: 14px;
+}
+
+.block-library-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.block-library-hint {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.block-library-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  border: 1px solid var(--red);
+  border-radius: 5px;
+  padding: 0 16px;
+  background: #fff;
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  width: fit-content;
+  transition: 0.15s ease;
+}
+
+.block-library-label:hover {
+  background: var(--red-soft);
+}
+
+.block-library-label svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* ─── Toast Notifications ────────────────────────── */
+
+.toast {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: 9999;
+  background: #fff;
+  color: #1d232f;
+  padding: 12px 20px;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(20, 20, 20, 0.18);
+  font-size: 14px;
+  font-weight: 700;
+  max-width: 360px;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  border-left: 4px solid var(--red);
+  pointer-events: none;
+}
+
+.toast.toast-visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* ─── View Switching ─────────────────────────────── */
