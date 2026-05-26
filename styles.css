@@ -1039,6 +1039,111 @@ tfoot td:nth-child(2) {
   color: #1d232f;
 }
 
+body:has(.mail-dialog-backdrop:not([hidden])) {
+  overflow: hidden;
+}
+
+body .mail-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(20, 24, 32, 0.38);
+}
+
+body .mail-dialog-backdrop[hidden] {
+  display: none;
+}
+
+body .mail-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border: 1px solid #8f96a3;
+  border-radius: 4px;
+  background: #f7f8fb;
+  box-shadow: 0 24px 80px rgba(20, 24, 32, 0.32);
+  padding: 16px 18px 18px;
+}
+
+body .mail-dialog header,
+body .mail-dialog footer {
+  display: flex;
+  align-items: center;
+}
+
+body .mail-dialog header {
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+body .mail-dialog footer {
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+body .mail-dialog label,
+body .mail-dialog .attachment-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+
+body .mail-dialog .copy-row {
+  grid-template-columns: 120px 20px minmax(0, 1fr);
+}
+
+body .mail-dialog .mail-text-row {
+  align-items: start;
+}
+
+body .mail-dialog input[type="text"],
+body .mail-dialog input[type="email"],
+body .mail-dialog textarea {
+  min-width: 0;
+}
+
+body .mail-dialog footer .primary-button,
+body .mail-dialog footer .outline-button {
+  width: auto;
+  min-height: 34px;
+  margin: 0;
+  padding: 0 14px;
+}
+
+@media (max-width: 720px) {
+  body .mail-dialog-backdrop {
+    align-items: start;
+    padding: 12px;
+  }
+
+  body .mail-dialog {
+    width: 100%;
+    max-height: calc(100vh - 24px);
+  }
+
+  body .mail-dialog label,
+  body .mail-dialog .attachment-row,
+  body .mail-dialog .copy-row {
+    grid-template-columns: 1fr;
+  }
+
+  body .mail-dialog footer {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  body .mail-dialog footer .primary-button,
+  body .mail-dialog footer .outline-button {
+    width: 100%;
+  }
+}
+
 .timeline b {
   margin-left: 12px;
 }
