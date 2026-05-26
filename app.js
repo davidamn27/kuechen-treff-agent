@@ -431,13 +431,31 @@ function renderInsights(insights) {
       </article>
     ` : "",
     ...suggestionItems.map((item, index) => `
-      <article class="agent-card-fill">
+      <article class="agent-card-fill product-option-card">
         <b>${escapeHtml(item.label || `Füllwert-Option ${index + 1}`)}</b>
         <span>${escapeHtml(item.action || `${item.article_number} · ${item.description}`)}</span>
         <small>${formatMoney(item.estimated_value)} · Block ${escapeHtml(item.block_number)} PG ${escapeHtml(item.price_group)}</small>
+        ${renderProductData(item.product_data)}
       </article>
     `),
   ].join("") || `<article><b>Keine Füllwert-Optionen</b><span>Nach der AB berechnet der Agent passende Ergänzungen automatisch.</span></article>`;
+}
+
+function renderProductData(productData = []) {
+  if (!productData.length) {
+    return "";
+  }
+
+  return `
+    <dl class="product-data-list">
+      ${productData.map((entry) => `
+        <div>
+          <dt>${escapeHtml(entry.label)}</dt>
+          <dd>${escapeHtml(entry.value)}</dd>
+        </div>
+      `).join("")}
+    </dl>
+  `;
 }
 
 function renderKpis(summary, status) {

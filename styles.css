@@ -888,6 +888,53 @@ tfoot td:nth-child(2) {
   border-color: rgba(0, 148, 68, 0.2);
 }
 
+.product-option-card {
+  display: grid;
+  gap: 10px;
+}
+
+.product-data-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin: 4px 0 0;
+  border: 1px solid rgba(0, 148, 68, 0.18);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.product-data-list div {
+  min-width: 0;
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(0, 148, 68, 0.14);
+}
+
+.product-data-list div:nth-child(odd) {
+  border-right: 1px solid rgba(0, 148, 68, 0.14);
+}
+
+.product-data-list div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.product-data-list dt {
+  color: #5f6674;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.25;
+  margin-bottom: 4px;
+}
+
+.product-data-list dd {
+  margin: 0;
+  color: #1d2430;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .action-panel button {
   width: 100%;
   border: 0;
@@ -1186,6 +1233,22 @@ body .mail-dialog footer .outline-button {
   body .mail-dialog footer .primary-button,
   body .mail-dialog footer .outline-button {
     width: 100%;
+  }
+
+  .product-data-list {
+    grid-template-columns: 1fr;
+  }
+
+  .product-data-list div:nth-child(odd) {
+    border-right: 0;
+  }
+
+  .product-data-list div:nth-last-child(-n + 2) {
+    border-bottom: 1px solid rgba(0, 148, 68, 0.14);
+  }
+
+  .product-data-list div:last-child {
+    border-bottom: 0;
   }
 }
 

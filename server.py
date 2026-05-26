@@ -1431,6 +1431,7 @@ def suggest_fill_items(block_rules: list[dict], fill_value: float, selected_bloc
                 "block_number": rule.get("block_number") or "",
                 "price_group": rule.get("price_group") or "",
                 "label": "Alternative Füllwert-Option",
+                "product_data": rule_product_data(rule, fill_value, estimated_value),
             }
         )
     return suggestions
@@ -1459,6 +1460,7 @@ def suggest_block_appliances(block_rules: list[dict], fill_value: float, selecte
                 "price_group": price_group,
                 "label": "Empfehlung: Elektrogerät ergänzen" if article_number.startswith("EG") else "Empfehlung: Spüle ergänzen",
                 "action": f"{article_number} · {description} ergänzen; liegt im Füllwert von ca. {format_money(fill_value)}.",
+                "product_data": rule_product_data(rule, fill_value, min(fill_value, appliance_value)),
             }
         )
         if len(suggestions) >= limit:
@@ -1486,6 +1488,33 @@ def suggestion_value(rule: dict) -> float:
     if gross_price and block_price and gross_price > block_price * 1.5:
         return min(gross_price, block_price)
     return gross_price or block_price
+
+
+def rule_product_data(rule: dict, fill_value: float, estimated_value: float | None = None) -> list[dict]:
+    excerpt = rule.get("source_excerpt") or ""
+    parts = [part.strip() for part in excerpt.split("|")]
+    source_codes = parts[2] if len(parts) > 2 else ""
+    category = parts[4] if len(parts) > 4 else ""
+    furniture_value = rule.get("gross_price") or parse_money(parts[5] if len(parts) > 5 else "")
+    appliance_value = rule.get("appliance_value") or parse_money(parts[6] if len(parts) > 6 else "")
+    block_price = rule.get("block_price") or parse_money(parts[7] if len(parts) > 7 else "")
+    chargeable = "ja" if rule.get("chargeable") else "nein"
+    data = [
+        ("Artikelnummer", rule.get("article_number") or ""),
+        ("Bezeichnung", rule_description(rule)),
+        ("Kategorie", category or infer_category(rule_description(rule))),
+        ("Blocknummer", rule.get("block_number") or ""),
+        ("Preisgruppe", rule.get("price_group") or ""),
+        ("Modell-/Quellcode", source_codes),
+        ("Empfohlener Warenwert", format_money(estimated_value or suggestion_value(rule))),
+        ("Offener Füllwert", format_money(fill_value)),
+        ("E-Geräte netto zur Verrechnung", format_money(appliance_value)),
+        ("Möbel-Blockwert brutto", format_money(furniture_value)),
+        ("Blockpreis netto", format_money(block_price)),
+        ("Verrechenbar", chargeable),
+        ("Quelle", rule.get("source_file") or "Alliance/Häcker-Blockdatenbank"),
+    ]
+    return [{"label": label, "value": str(value)} for label, value in data if value not in ("", "0,00 €")]
 
 
 def rule_description(rule: dict) -> str:
