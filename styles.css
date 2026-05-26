@@ -796,6 +796,20 @@ tfoot td:nth-child(2) {
   margin-bottom: 4px;
 }
 
+.agent-list .agent-card-primary {
+  border-color: rgba(0, 148, 68, 0.35);
+  background: #f5fbf7;
+}
+
+.agent-list .agent-card-primary b,
+.agent-list .agent-card-fill b {
+  color: #009444;
+}
+
+.agent-list .agent-card-fill {
+  border-color: rgba(0, 148, 68, 0.2);
+}
+
 .action-panel button {
   width: 100%;
   border: 0;

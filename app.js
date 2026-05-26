@@ -290,11 +290,46 @@ function renderInsights(insights) {
 
   const mismatchItems = [...(ab.dimension_mismatches || []), ...(ab.missing_in_ab || []), ...(ab.additional_in_ab || [])].slice(0, 3);
   const suggestionItems = fill.suggestions || [];
-  const blockFinderItems = blockFinder.available ? (blockFinder.candidates || []).slice(0, 4) : [];
+  const recommendation = blockFinder.recommendation || blockFinder.selected;
+  const currentBlock = blockFinder.current;
+  const alternativeBlocks = blockFinder.available
+    ? (blockFinder.candidates || [])
+        .filter((item) => item.block_number !== recommendation?.block_number && item.block_number !== currentBlock?.block_number)
+        .slice(0, 2)
+    : [];
   agentSuggestions.innerHTML = [
-    ...blockFinderItems.map((item) => `
+    recommendation ? `
+      <article class="agent-card-primary">
+        <b>Blockwechsel-Empfehlung</b>
+        <span>${escapeHtml(currentBlock?.block_number || "aktueller Block")} → ${escapeHtml(recommendation.block_number)} · PG ${escapeHtml(recommendation.price_group)}</span>
+        <small>Blockpreis ${formatMoney(recommendation.block_price)} · Ersparnis ${formatMoney(recommendation.saving || ((currentBlock?.block_price || 0) - recommendation.block_price))}</small>
+      </article>
+    ` : "",
+    currentBlock ? `
       <article>
-        <b>Häcker Blockfinder ${escapeHtml(item.block_number)} · PG ${escapeHtml(item.price_group)}</b>
+        <b>Aktueller AB-Block</b>
+        <span>${escapeHtml(currentBlock.block_number)} · Blockpreis ${formatMoney(currentBlock.block_price)}</span>
+        <small>Möbel-Füllwert ${formatMoney(currentBlock.fill_gross)} · E-Geräte-Füllwert ${formatMoney(currentBlock.fill_net)}</small>
+      </article>
+    ` : "",
+    recommendation ? `
+      <article>
+        <b>Füllwert der Empfehlung</b>
+        <span>Möbel-Füllwert ${formatMoney(recommendation.fill_gross)} · E-Geräte-Füllwert ${formatMoney(recommendation.fill_net)}</span>
+        <small>Gesamt-Füllwert ${formatMoney(recommendation.fill_total || 0)} · Möbel ${formatMoney(recommendation.furniture_block_value)} / E-Geräte ${formatMoney(recommendation.appliance_block_value)}</small>
+      </article>
+    ` : "",
+    ...suggestionItems.map((item, index) => `
+      <article class="agent-card-fill">
+        <b>Füllwert-Option ${index + 1}</b>
+        <span>${escapeHtml(item.article_number)} · ${escapeHtml(item.description)}</span>
+        <small>${formatMoney(item.estimated_value)} · Block ${escapeHtml(item.block_number)} PG ${escapeHtml(item.price_group)}</small>
+      </article>
+    `),
+    ...alternativeBlocks.map((item) => `
+      <article>
+        <b>Weitere Blockfinder-Alternative</b>
+        <span>${escapeHtml(item.block_number)} · PG ${escapeHtml(item.price_group)}</span>
         <span>Blockpreis ${formatMoney(item.block_price)} · Möbel-Füllwert ${formatMoney(item.fill_gross)} · E-Geräte-Füllwert ${formatMoney(item.fill_net)}</span>
         <small>Möbel ${formatMoney(item.furniture_block_value)} / E-Geräte ${formatMoney(item.appliance_block_value)}</small>
       </article>
@@ -304,13 +339,6 @@ function renderInsights(insights) {
         <b>${escapeHtml(item.label)}</b>
         <span>${escapeHtml(item.article_number)} · ${escapeHtml(item.description)}</span>
         ${item.planned_dimensions || item.manufacturer_dimensions ? `<small>${escapeHtml(item.planned_dimensions || "-")} → ${escapeHtml(item.manufacturer_dimensions || "-")}</small>` : ""}
-      </article>
-    `),
-    ...suggestionItems.map((item) => `
-      <article>
-        <b>Füllwert-Vorschlag</b>
-        <span>${escapeHtml(item.article_number)} · ${escapeHtml(item.description)}</span>
-        <small>${formatMoney(item.estimated_value)} · Block ${escapeHtml(item.block_number)} PG ${escapeHtml(item.price_group)}</small>
       </article>
     `),
   ].join("") || `<article><b>Keine offenen Agenten-Hinweise</b><span>Nach der AB werden Füllwert und Abweichungen automatisch ergänzt.</span></article>`;
