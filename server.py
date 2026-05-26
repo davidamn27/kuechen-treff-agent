@@ -328,17 +328,33 @@ def create_mail_draft(connection: sqlite3.Connection, project_id: str) -> dict:
     project = connection.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     article_rows = connection.execute("SELECT quantity, single_price, block_price FROM articles WHERE project_id = ?", (project_id,)).fetchall()
     savings = sum((row["single_price"] - row["block_price"]) * row["quantity"] for row in article_rows)
-    subject = f"Anfrage zur Prüfung der Einsparungen - Projekt {project_id}"
-    recipient = project["supplier"] or ""
-    commission = project["commission"] or project["name"]
-    body = (
-        "Sehr geehrte Damen und Herren,\n\n"
-        f"bitte prüfen Sie die beigefügten Positionen zur Blockverrechnung für die Kommission {commission}.\n"
-        f"Nach unserer aktuellen Auswertung ergibt sich eine geschätzte offene Einsparung von {format_money(savings)}.\n\n"
-        "Bitte bestätigen Sie die Korrektur oder senden Sie uns Ihre Rückmeldung zu abweichenden Positionen.\n\n"
-        "Mit freundlichen Grüßen\n"
-        "Max Mustermann"
-    )
+    ab_text = latest_document_text(connection, project_id, "Auftragsbestätigung")
+    ab_meta = extract_ab_mail_meta(ab_text or "")
+    ab_block_data = extract_ab_block_data(ab_text or "") if ab_text else None
+    rules = [
+        row_to_dict(row)
+        for row in connection.execute(
+            "SELECT * FROM block_rules WHERE project_id IN (?, ?)",
+            (project_id, GLOBAL_BLOCK_PROJECT_ID),
+        )
+    ]
+    recommended_block = recommend_block_change(ab_block_data, rules)
+    recipient = project["supplier"] or "Rueckfrage@haecker-kuechen.de"
+    commission = ab_meta.get("commission") or project["commission"] or project["name"]
+
+    if recommended_block:
+        subject = mail_subject_for_block_change(ab_meta, commission)
+        body = f"Bitte Block ändern auf {recommended_block['block_number']}."
+    else:
+        subject = f"Anfrage zur Prüfung der Einsparungen - Projekt {project_id}"
+        body = (
+            "Sehr geehrte Damen und Herren,\n\n"
+            f"bitte prüfen Sie die beigefügten Positionen zur Blockverrechnung für die Kommission {commission}.\n"
+            f"Nach unserer aktuellen Auswertung ergibt sich eine geschätzte offene Einsparung von {format_money(savings)}.\n\n"
+            "Bitte bestätigen Sie die Korrektur oder senden Sie uns Ihre Rückmeldung zu abweichenden Positionen.\n\n"
+            "Mit freundlichen Grüßen\n"
+            "Max Mustermann"
+        )
     draft_id = str(uuid4())
     stamp = now_iso()
     connection.execute(
@@ -349,6 +365,93 @@ def create_mail_draft(connection: sqlite3.Connection, project_id: str) -> dict:
         (draft_id, project_id, recipient, subject, body, "Entwurf", stamp, stamp),
     )
     return {"id": draft_id, "recipient": recipient, "subject": subject, "body": body, "status": "Entwurf"}
+
+
+def latest_document_text(connection: sqlite3.Connection, project_id: str, document_type: str) -> str:
+    row = connection.execute(
+        "SELECT extracted_text FROM documents WHERE project_id = ? AND document_type = ? ORDER BY uploaded_at DESC LIMIT 1",
+        (project_id, document_type),
+    ).fetchone()
+    return row["extracted_text"] if row and row["extracted_text"] else ""
+
+
+def extract_ab_mail_meta(text: str) -> dict:
+    patterns = {
+        "ab_number": r"\bAB-Nr\.\s*([A-Z0-9-]+)",
+        "customer_number": r"\bKunden-Nr\.\s*([A-Z0-9-]+)",
+        "commission": r"\bKommission\s+([A-Z0-9ÄÖÜäöüß /_.-]+)",
+        "order_number": r"\bBestell-Nr\.\s*([A-Z0-9-]+)",
+    }
+    meta = {}
+    for key, pattern in patterns.items():
+        match = re.search(pattern, text, re.I)
+        if match:
+            value = match.group(1).strip()
+            meta[key] = re.split(r"\s{2,}|\n", value)[0].strip()
+    return meta
+
+
+def mail_subject_for_block_change(meta: dict, commission: str) -> str:
+    parts = []
+    if meta.get("ab_number"):
+        parts.append(f"AB-Nr. {meta['ab_number']}")
+    if meta.get("customer_number"):
+        parts.append(f"KD-Nr. {meta['customer_number']}")
+    if commission:
+        parts.append(f"Kom. {commission}")
+    if meta.get("order_number"):
+        parts.append(f"Best.-Nr. {meta['order_number']}")
+    return "Mail zu " + " / ".join(parts) if parts else "Rückfrage zur Blockänderung"
+
+
+def recommend_block_change(ab_block_data: dict | None, block_rules: list[dict]) -> dict | None:
+    if not ab_block_data:
+        return None
+    current_block = str(ab_block_data.get("block_number") or "").strip()
+    current_price = ab_block_data.get("bc_price") or 0.0
+    furniture_value = ab_block_data.get("moebel_brutto") or 0.0
+    appliance_value = ab_block_data.get("eg_brutto") or 0.0
+    price_group = str(ab_block_data.get("price_group") or "2").strip() or "2"
+    if current_price <= 0 or furniture_value <= 0:
+        return None
+
+    grouped: dict[tuple[str, str], dict] = {}
+    for rule in block_rules:
+        block_number = str(rule.get("block_number") or "").strip()
+        rule_pg = str(rule.get("price_group") or "").strip()
+        if not block_number or rule_pg != price_group or block_number == current_block:
+            continue
+        gross_price = rule.get("gross_price") or 0.0
+        block_price = rule.get("block_price") or 0.0
+        eg_value = rule.get("appliance_value") or 0.0
+        if gross_price <= 0 or block_price <= 0 or eg_value <= 0 or block_price >= current_price:
+            continue
+        key = (block_number, rule_pg)
+        if key not in grouped:
+            grouped[key] = {
+                "block_number": block_number,
+                "price_group": rule_pg,
+                "furniture_block_value": gross_price,
+                "appliance_block_value": eg_value,
+                "block_price": block_price,
+                "fill_gross": round(furniture_value - gross_price, 2),
+                "fill_net": round(appliance_value - eg_value, 2),
+                "saving": round(current_price - block_price, 2),
+            }
+
+    candidates = [candidate for candidate in grouped.values() if candidate["fill_gross"] >= 0]
+    if not candidates:
+        candidates = list(grouped.values())
+    if not candidates:
+        return None
+    return sorted(
+        candidates,
+        key=lambda candidate: (
+            -candidate["furniture_block_value"],
+            abs(candidate["fill_net"]),
+            candidate["block_price"],
+        ),
+    )[0]
 
 
 def regenerate_mail_draft(connection: sqlite3.Connection, project_id: str) -> None:
